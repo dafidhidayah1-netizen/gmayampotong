@@ -1,0 +1,6 @@
+{
+  "name": "AyamKas Pro",
+  "description": "Pembukuan Usaha Ayam Potong: Pembelian DO, Stok kg & HPP, Omzet Penjualan, Kas, Utang, Piutang dan Laporan Keuangan.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
