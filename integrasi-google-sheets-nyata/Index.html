@@ -8,7 +8,7 @@
 <script>
 const $=id=>document.getElementById(id);let state={transactions:[],employees:[],attendance:[],payroll:[]};
 const money=n=>'Rp'+Number(n||0).toLocaleString('id-ID');const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-function call(action,payload={}){return new Promise((resolve,reject)=>google.script.run.withSuccessHandler(resolve).withFailureHandler(e=>reject(new Error(e.message||String(e))).api(action,payload)));}
+function call(action,payload={}){return new Promise((resolve,reject)=>google.script.run.withSuccessHandler(resolve).withFailureHandler(e=>reject(new Error(e.message||String(e)))).api(action,payload));}
 function setStatus(t,kind=''){ $('status').className='status '+kind;$('status').textContent=t;}
 function rows(id,html){$(id).innerHTML=html||'<tr><td colspan="8">Belum ada data.</td></tr>';}
 function draw(){const ts=state.transactions;const incoming=ts.filter(x=>['PENJUALAN','KAS_MASUK','TERIMA_PIUTANG','MODAL_MASUK'].includes(x.jenis)).reduce((a,x)=>a+Number(x.nominal||0),0);const outgoing=ts.filter(x=>['PEMBELIAN_DO','BIAYA','BAYAR_UTANG','MODAL_KELUAR'].includes(x.jenis)).reduce((a,x)=>a+Number(x.dibayar||0),0);$('count').textContent=ts.length;$('income').textContent=money(incoming);$('expense').textContent=money(outgoing);$('net').textContent=money(incoming-outgoing);
