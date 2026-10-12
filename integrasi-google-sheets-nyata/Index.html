@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AyamKas Pro · Cloud</title>
+<style>
+:root{font-family:Inter,system-ui,-apple-system,Segoe UI,Arial,sans-serif;color:#17221d;background:#f3f6f4}
+*{box-sizing:border-box}body{margin:0}button,input,select,textarea{font:inherit}
+.shell{max-width:1160px;margin:auto;padding:20px}.hero{background:linear-gradient(125deg,#103b2d,#176b50);color:white;border-radius:20px;padding:24px;box-shadow:0 10px 28px #0e39251a}
+h1{font-size:25px;margin:0 0 6px}.sub{color:#c7ded3;font-size:13px;line-height:1.5}.status{margin-top:12px;font-size:13px;overflow-wrap:anywhere}.ok{color:#b6f5d0}.bad{color:#ffd4cf}
+.auth,.panel,.metric{background:white;border:1px solid #dfe7e1;border-radius:16px;padding:17px;margin:14px 0;box-shadow:0 3px 12px #123c2c07}
+h2{font-size:17px;margin:0 0 12px}h3{font-size:16px;margin:0 0 10px}.muted{color:#69786f;font-size:12px;line-height:1.55}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(175px,1fr));gap:12px}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px}.metric{margin:0}.metric span{color:#68786e;font-size:12px;display:block}.metric b{font-size:22px;display:block;margin:7px 0;color:#164735;overflow-wrap:anywhere}
+label{display:block;font-size:12px;font-weight:650;margin:7px 0 5px}input,select,textarea{width:100%;padding:11px 12px;border:1px solid #cad7ce;border-radius:10px;background:#fff;color:#17221d;min-height:42px}textarea{min-height:68px;resize:vertical}
+button{border:0;border-radius:10px;padding:11px 15px;background:#176b50;color:#fff;font-weight:700;cursor:pointer}button.secondary{background:#e4eee8;color:#164735}button.ghost{background:transparent;border:1px solid #b9c9be;color:#164735}
+.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:13px}.nav{display:flex;gap:8px;flex-wrap:wrap;margin:16px 0}.nav button{font-size:13px}.nav button.active{background:#103b2d}
+.scroll{overflow:auto;border:1px solid #e0e8e2;border-radius:12px;margin-top:12px}table{width:100%;border-collapse:collapse;background:#fff;font-size:12px;min-width:780px}th,td{text-align:left;padding:10px;border-bottom:1px solid #e5ebe6;vertical-align:top}th{background:#edf3ef;color:#2c4838;position:sticky;top:0}tr:last-child td{border-bottom:0}
+.hidden{display:none!important}.warning{background:#fff6df;color:#77531a;padding:13px;border-radius:12px;margin:12px 0;font-size:13px;line-height:1.5}.pill{display:inline-block;padding:4px 8px;border-radius:999px;font-size:11px;background:#edf3ef;color:#365b44}.pill.bad{background:#fff0ee;color:#a32a24}.pill.ok{background:#e5f7eb;color:#176b50}.section-title{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
+footer{padding:18px 4px;color:#6b7a70;font-size:11px}
+@media(max-width:600px){.shell{padding:12px}.hero{padding:18px}h1{font-size:22px}.metric b{font-size:19px}}
+</style>
+</head>
+<body>
+<div class="shell">
+<header class="hero">
+  <h1>AyamKas Pro · Integrasi Cloud</h1>
+  <div class="sub">Transaksi dibaca dan ditulis langsung ke Google Sheets. Ringkasan laba menampilkan peringatan jika HPP atau data transaksi belum lengkap.</div>
+  <div id="status" class="status">Masukkan token Apps Script untuk menghubungkan sistem.</div>
+</header>
+
+<section class="auth">
+  <h2>Keamanan & Koneksi</h2>
+  <div class="grid">
+    <div><label for="apiToken">Token akses Apps Script</label><input type="password" id="apiToken" autocomplete="current-password" placeholder="Tempel token yang dibuat dari configureApiToken()"></div>
+    <div><label for="tokenHint">Cara mendapat token</label><div class="muted" id="tokenHint">Apps Script → jalankan configureApiToken() → buka Execution log milik pemilik → salin nilai AYAMKAS_API_TOKEN.</div></div>
+  </div>
+  <div class="actions"><button id="connect">Uji koneksi & muat data</button><button class="secondary" id="reload">Muat ulang / sinkronkan layar</button><button class="secondary" id="backup">Cadangkan spreadsheet ke Drive</button></div>
+  <p class="muted">Jangan membagikan token kepada orang yang tidak berwenang. Token disimpan dalam memori halaman saja dan tidak ditanam dalam HTML. Akses data tetap bergantung pada izin deployment Apps Script.</p>
+</section>
+
+<div id="app" class="hidden">
+<nav class="nav">
+ <button data-tab="dash" class="active">Ringkasan</button><button data-tab="tx">Transaksi</button><button data-tab="staff">Karyawan</button><button data-tab="attendance">Absensi</button><button data-tab="payroll">Penggajian</button><button data-tab="calc">Alur perhitungan</button>
+</nav>
+
+<section id="dash">
+ <div class="cards">
+  <div class="metric"><span>Omzet penjualan</span><b id="mRevenue">Rp0</b><div class="muted">Transaksi penjualan terverifikasi</div></div>
+  <div class="metric"><span>HPP ayam terjual</span><b id="mHpp">Rp0</b><div class="muted">HPP dari kg terjual yang tertaut ke DO</div></div>
+  <div class="metric"><span>Laba operasional sementara</span><b id="mProfit">Rp0</b><div class="muted">Laba kotor dikurangi biaya luar batch</div></div>
+  <div class="metric"><span>Kas bersih tercatat</span><b id="mCash">Rp0</b><div class="muted">Pakai nominal pembayaran aktual</div></div>
+  <div class="metric"><span>Sisa stok tercatat</span><b id="mStock">0 kg</b><div class="muted">Sisa kg siap jual pada tiap DO</div></div>
+  <div class="metric"><span>Perkiraan utang / piutang</span><b id="mDebt">Rp0 / Rp0</b><div class="muted">Agregat; belum pengganti saldo per faktur</div></div>
+ </div>
+ <div id="quality" class="warning hidden"></div>
+ <div class="panel"><div class="section-title"><h2>Status kualitas pembukuan</h2><span class="pill" id="connectedSheet">Belum tersambung</span></div>
+ <p class="muted">Angka hanya berasal dari transaksi yang dikonfirmasi. Penjualan tanpa kg atau tanpa DO, biaya batch yang belum tertaut, stok minus, dan pembayaran yang belum pasti harus diperiksa sebelum angka laba dianggap final.</p>
+ <div class="scroll"><table><thead><tr><th>Indikator</th><th>Nilai</th><th>Arti / dasar rumus</th></tr></thead><tbody id="summaryRows"></tbody></table></div></div>
+</section>
+
+<section id="tx" class="hidden">
+ <form class="panel" id="txform">
+  <h2>Catat transaksi usaha</h2>
+  <div class="grid">
+   <div><label>Tanggal *</label><input name="tanggal" type="date" required></div>
+   <div><label>Jenis *</label><select name="jenis" required>
+    <option value="sale">Penjualan / omzet</option><option value="purchase">Pembelian DO</option><option value="expense">Biaya operasional</option><option value="capital_in">Modal masuk</option><option value="capital_out">Prive / modal keluar</option><option value="supplier_payment">Bayar utang supplier</option><option value="receivable_payment">Terima piutang pelanggan</option>
+   </select></div>
+   <div><label>Kategori</label><input name="kategori" placeholder="Ayam, BBM, listrik, upah..."></div>
+   <div><label>Nominal transaksi (Rp) *</label><input name="nominal" type="number" min="1" step="1" required></div>
+   <div><label>Kas dibayar / diterima (Rp)</label><input name="dibayar" type="number" min="0" step="1" placeholder="Isi aktual; kosong berarti belum diverifikasi"></div>
+   <div><label>Berat transaksi (kg)</label><input name="qtyKg" type="number" min="0" step="0.001" placeholder="Wajib untuk DO dan penjualan terverifikasi"></div>
+   <div><label>Berat siap jual setelah proses (kg)</label><input name="kgSiapJual" type="number" min="0" step="0.001" placeholder="Untuk pembelian: kg hasil bersih/karkas"></div>
+   <div><label>Nomor DO / batch penjualan</label><input name="batchRef" placeholder="Harus sama dengan referensi DO pembelian"></div>
+   <div><label>Nomor referensi / invoice *</label><input name="referensi" placeholder="Mis. DO-001 atau FAK-001"></div>
+   <div><label>Supplier / pelanggan / pihak</label><input name="pihak" placeholder="Nama pihak terkait"></div>
+   <div><label>Metode</label><select name="metode"><option value="TUNAI">Tunai</option><option value="TRANSFER">Transfer</option><option value="KREDIT">Kredit</option><option value="LAINNYA">Lainnya</option></select></div>
+   <div><label>Status verifikasi</label><select name="status"><option value="draft">Draf / periksa dahulu</option><option value="confirmed">Terverifikasi / masuk perhitungan</option></select></div>
+   <div style="grid-column:1/-1"><label>Keterangan / catatan / nomor bukti</label><textarea name="catatan" placeholder="Tulis detail nota, bukti, keterangan timbang, penyusutan, retur, dsb."></textarea></div>
+  </div>
+  <p class="muted">Untuk penjualan, isi kg dan nomor DO terkait. Untuk pembelian ayam, isi kg masuk; isi kg siap jual jika berat setelah potong/susut berbeda. Pengeluaran yang langsung terkait satu DO harus mengisi kolom batch agar masuk ke HPP batch, bukan dihitung ganda sebagai biaya umum.</p>
+  <div class="actions"><button type="submit">Simpan ke Google Sheets</button><button type="reset" class="secondary">Kosongkan form</button></div>
+ </form>
+ <div class="panel"><div class="section-title"><h2>Riwayat transaksi</h2><input id="searchTx" style="max-width:280px" placeholder="Cari keterangan / DO / pihak"></div>
+ <div class="scroll"><table><thead><tr><th>Tanggal</th><th>Ref</th><th>Jenis</th><th>Keterangan</th><th>Nominal</th><th>Kas</th><th>Status bayar</th><th>HPP / stok</th><th>Verifikasi</th><th>Aksi</th></tr></thead><tbody id="txrows"></tbody></table></div></div>
+</section>
+
+<section id="staff" class="hidden">
+ <form class="panel" id="staffform"><h2>Data karyawan</h2><div class="grid">
+ <div><label>Nama *</label><input name="nama" required></div><div><label>Jabatan *</label><input name="jabatan" required></div><div><label>Tarif harian (Rp)</label><input name="tarifHarian" type="number" min="0" step="1" value="0" required></div><div><label>Tarif lembur per jam (Rp)</label><input name="tarifLemburPerJam" type="number" min="0" step="1" value="0" required></div>
+ </div><div class="actions"><button type="submit">Simpan karyawan</button></div></form>
+ <div class="panel"><h2>Daftar karyawan</h2><div class="scroll"><table><thead><tr><th>Nama</th><th>Jabatan</th><th>Tarif/hari</th><th>Tarif lembur/jam</th><th>Aktif</th></tr></thead><tbody id="staffrows"></tbody></table></div></div>
+</section>
+
+<section id="attendance" class="hidden">
+ <form class="panel" id="attform"><h2>Catat absensi</h2><div class="grid">
+ <div><label>Tanggal *</label><input name="tanggal" type="date" required></div><div><label>Karyawan *</label><select name="karyawanId" id="employeeSelect" required></select></div>
+ <div><label>Status</label><select name="status"><option>HADIR</option><option>IZIN</option><option>SAKIT</option><option>ALPHA</option><option>LIBUR</option></select></div>
+ <div><label>Jam masuk</label><input name="jamMasuk" type="time"></div><div><label>Jam pulang</label><input name="jamPulang" type="time"></div><div><label>Lembur (jam)</label><input name="lemburJam" type="number" min="0" step=".5" value="0"></div><div><label>Catatan</label><input name="catatan"></div>
+ </div><div class="actions"><button type="submit">Simpan absensi</button></div></form>
+ <div class="panel"><h2>Riwayat absensi</h2><div class="scroll"><table><thead><tr><th>Tanggal</th><th>Karyawan</th><th>Status</th><th>Jam</th><th>Lembur</th><th>Catatan</th></tr></thead><tbody id="attrows"></tbody></table></div></div>
+</section>
+
+<section id="payroll" class="hidden">
+ <form class="panel" id="payform"><h2>Rekap penggajian</h2><div class="grid">
+ <div><label>Periode *</label><input name="periode" type="month" required></div><div><label>Karyawan *</label><select name="karyawanId" id="payEmployee" required></select></div>
+ <div><label>Hari hadir terverifikasi</label><input name="hariHadir" type="number" min="0" step="1" value="0" required></div><div><label>Jam lembur disetujui</label><input name="lemburJam" type="number" min="0" step=".5" value="0"></div>
+ <div><label>Bonus disetujui (Rp)</label><input name="bonus" type="number" min="0" value="0"></div><div><label>Potongan disetujui (Rp)</label><input name="potongan" type="number" min="0" value="0"></div>
+ <div><label>Status pembayaran</label><select name="statusBayar"><option>BELUM DIBAYAR</option><option>DIBAYAR</option></select></div>
+ </div><p class="muted" id="payPreview">Gaji = hari hadir × tarif harian + jam lembur × tarif lembur/jam + bonus − potongan. Verifikasi aturan lembur, potongan, pajak dan kewajiban ketenagakerjaan secara terpisah sebelum pembayaran final.</p>
+ <div class="actions"><button type="submit">Hitung & simpan rekap</button></div></form>
+ <div class="panel"><h2>Riwayat gaji</h2><div class="scroll"><table><thead><tr><th>Periode</th><th>Karyawan</th><th>Hadir</th><th>Pokok</th><th>Lembur</th><th>Bonus</th><th>Potongan</th><th>Total</th><th>Status</th></tr></thead><tbody id="payrows"></tbody></table></div></div>
+</section>
+
+<section id="calc" class="hidden">
+ <div class="panel"><h2>Alur hitung yang dipakai</h2>
+  <ol>
+   <li><b>Pembelian DO:</b> catat total biaya pembelian, berat masuk (kg), pembayaran aktual, supplier, dan nomor DO unik.</li>
+   <li><b>Hasil potong / susut:</b> isi berat bersih siap jual per DO. Jika kolom ini kosong, sementara dipakai berat masuk; ini dapat melebihkan stok dan merendahkan HPP/kg.</li>
+   <li><b>Biaya langsung DO:</b> kaitkan biaya potong, angkut khusus atau biaya langsung lain ke nomor DO yang sama agar teralokasi ke biaya batch.</li>
+   <li><b>Penjualan:</b> catat omzet, kg terjual, pembayaran aktual dan nomor DO sumber. Jangan konfirmasi penjualan tanpa bukti kg/DO jika ingin laba lengkap.</li>
+   <li><b>HPP:</b> (biaya pembelian DO + biaya langsung batch) ÷ kg siap jual × kg terjual. Sisa stok = kg siap jual − total kg terjual dari DO tersebut.</li>
+   <li><b>Laba sementara:</b> omzet − HPP yang berhasil dihitung − biaya operasional yang tidak dialokasikan ke DO. Angka tetap belum final jika HPP belum lengkap atau masih ada biaya yang belum dicatat.</li>
+   <li><b>Kas:</b> modal masuk + uang penjualan yang benar-benar diterima + penerimaan piutang − pembayaran DO, biaya, pembayaran utang dan prive yang benar-benar terjadi.</li>
+   <li><b>Piutang/utang:</b> rekap saat ini masih agregat. Untuk jatuh tempo, umur saldo, dan baki per pelanggan/supplier, perlu semua pembayaran ditautkan ke invoice/DO spesifik.</li>
+  </ol>
+  <div class="warning">Jangan jalankan setup/reset pada spreadsheet produksi tanpa salinan. Formula ini membantu kontrol operasional, bukan pengganti penelaahan akuntan atau perhitungan kewajiban pajak. Data historis harus diverifikasi sebelum statusnya diubah menjadi terkonfirmasi.</div>
+ </div>
+</section>
+</div>
+
+<footer>AyamKas Pro · Simpan bukti transaksi dan lakukan rekonsiliasi saldo fisik kas/bank. URL web app dan token harus dijaga. Backup diuji dengan membuka file hasil salinan, bukan hanya memeriksa pesan sukses.</footer>
+</div>
+
+<script>
+const $=id=>document.getElementById(id);
+let state={transactions:[],summary:[],employees:[],attendance:[],payroll:[],spreadsheetId:''};
+const money=n=>'Rp'+Number(n||0).toLocaleString('id-ID',{maximumFractionDigits:0});
+const num=n=>Number(n||0);
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const typeLabels={capital_in:'Modal masuk',purchase:'Pembelian DO',sale:'Penjualan',expense:'Biaya operasional',capital_out:'Prive/modal keluar',supplier_payment:'Bayar utang',receivable_payment:'Terima piutang'};
+function token(){return $('apiToken').value.trim();}
+function setStatus(msg,ok=false){$('status').textContent=msg;$('status').className='status '+(ok?'ok':'bad');}
+function call(action,payload={}) {
+ const key=token(); if(!key) return Promise.reject(new Error('Token akses belum diisi.'));
+ return new Promise((resolve,reject)=>google.script.run
+  .withSuccessHandler(r=>{if(r&&r.ok===false)reject(new Error(r.error||'Permintaan ditolak.'));else resolve(r);})
+  .withFailureHandler(e=>reject(new Error(e&&e.message||String(e))))
+  .api(action,payload,key));
+}
+function metricValue(label){const r=state.summary.find(x=>String(x.indikator)===label);return r?num(r.nilai):0;}
+function draw(){
+ const summaryRows=state.summary||[];
+ $('mRevenue').textContent=money(metricValue('Omzet penjualan'));
+ $('mHpp').textContent=money(metricValue('HPP ayam terjual'));
+ $('mProfit').textContent=money(metricValue('Laba operasional sementara'));
+ $('mCash').textContent=money(metricValue('Kas bersih tercatat'));
+ $('mStock').textContent=Number(metricValue('Stok bersih tercatat (kg)')).toLocaleString('id-ID',{maximumFractionDigits:3})+' kg';
+ $('mDebt').textContent=money(metricValue('Utang DO agregat (estimasi)'))+' / '+money(metricValue('Piutang agregat (estimasi)'));
+ $('connectedSheet').textContent=state.spreadsheetId?'Sheets ID: '+state.spreadsheetId:'Belum tersambung';
+ $('summaryRows').innerHTML=summaryRows.map(x=>'<tr><td>'+esc(x.indikator)+'</td><td>'+esc(typeof x.nilai==='number'?Number(x.nilai).toLocaleString('id-ID',{maximumFractionDigits:3}):x.nilai)+'</td><td>'+esc(x.rumus_dan_penjelasan)+'</td></tr>').join('')||'<tr><td colspan="3">Belum ada ringkasan.</td></tr>';
+ const flags=state.transactions.filter(x=>x.status==='confirmed'&&['HPP BELUM LENGKAP','STOK MINUS','BIAYA BATCH TANPA DO'].includes(String(x.statusHpp||'')));
+ const draftCount=state.transactions.filter(x=>x.status==='draft').length;
+ const q=$('quality');if(flags.length||draftCount){q.classList.remove('hidden');q.textContent='Perlu pemeriksaan: '+flags.length+' transaksi bermasalah HPP/stok/biaya batch dan '+draftCount+' transaksi masih draf. Periksa kolom status HPP pada riwayat transaksi sebelum memakai laba sebagai angka final.';}else{q.classList.add('hidden');}
+ renderTx();
+ $('staffrows').innerHTML=state.employees.map(x=>'<tr><td>'+esc(x.nama)+'</td><td>'+esc(x.jabatan)+'</td><td>'+money(x.tarifHarian)+'</td><td>'+money(x.tarifLemburPerJam)+'</td><td>'+esc(x.aktif)+'</td></tr>').join('')||'<tr><td colspan="5">Belum ada karyawan.</td></tr>';
+ const opts='<option value="">Pilih karyawan</option>'+state.employees.filter(x=>String(x.aktif)!=='false').map(x=>'<option value="'+esc(x.id)+'">'+esc(x.nama)+'</option>').join('');
+ $('employeeSelect').innerHTML=opts;$('payEmployee').innerHTML=opts;
+ $('attrows').innerHTML=state.attendance.slice().reverse().map(x=>'<tr><td>'+esc(x.tanggal)+'</td><td>'+esc(x.namaKaryawan)+'</td><td>'+esc(x.status)+'</td><td>'+esc(x.jamMasuk)+'–'+esc(x.jamPulang)+'</td><td>'+esc(x.lemburJam)+'</td><td>'+esc(x.catatan)+'</td></tr>').join('')||'<tr><td colspan="6">Belum ada absensi.</td></tr>';
+ $('payrows').innerHTML=state.payroll.slice().reverse().map(x=>'<tr><td>'+esc(x.periode)+'</td><td>'+esc(x.namaKaryawan)+'</td><td>'+esc(x.hariHadir)+'</td><td>'+money(x.gajiPokok)+'</td><td>'+money(x.uangLembur)+'</td><td>'+money(x.bonus)+'</td><td>'+money(x.potongan)+'</td><td>'+money(x.total)+'</td><td>'+esc(x.statusBayar)+'</td></tr>').join('')||'<tr><td colspan="9">Belum ada rekap gaji.</td></tr>';
+}
+function renderTx(){
+ const q=$('searchTx').value.trim().toLowerCase();
+ const txs=state.transactions.filter(x=>[x.tanggal,x.referensi,x.jenis,x.keterangan,x.pihak,x.batchRef].some(v=>String(v||'').toLowerCase().includes(q)));
+ $('txrows').innerHTML=txs.slice().reverse().map(x=>{
+ const status=String(x.statusHpp||'');
+ const pill=status==='OK'?'pill ok':(status&&status!=='—'?'pill bad':'pill');
+ return '<tr><td>'+esc(x.tanggal)+'</td><td>'+esc(x.referensi)+'</td><td>'+esc(typeLabels[x.jenis]||x.jenis)+'</td><td>'+esc(x.keterangan)+(x.pihak?'<div class="muted">'+esc(x.pihak)+'</div>':'')+'</td><td>'+money(x.nominal)+'</td><td>'+money(x.dibayar)+'</td><td>'+esc(x.statusPembayaran||'—')+'</td><td><span class="'+pill+'">'+esc(status||'—')+'</span><div class="muted">HPP: '+money(x.hppJual)+' · stok: '+esc(x.kgSisa||'—')+' kg</div></td><td><span class="pill">'+esc(x.status)+'</span></td><td>'+ (x.status!=='true'&&String(x.deleted)!=='true'?'<button class="secondary" data-delete="'+esc(x.id)+'">Arsipkan</button>':'')+'</td></tr>';
+ }).join('')||'<tr><td colspan="10">Tidak ada transaksi yang cocok.</td></tr>';
+ document.querySelectorAll('[data-delete]').forEach(b=>b.onclick=async()=>{if(!confirm('Arsipkan transaksi ini? Data tidak dihapus permanen.'))return;try{await call('deleteTransaction',{id:b.dataset.delete});await refresh();setStatus('Transaksi diarsipkan dan ringkasan diperbarui.',true);}catch(e){setStatus('Gagal mengarsipkan: '+e.message);}});
+}
+async function refresh(){
+ try{setStatus('Mengambil data dari Google Sheets…');const r=await call('init');
+ state=Object.assign(state,r||{});$('app').classList.remove('hidden');draw();setStatus('Terhubung · data terbaru dibaca dari Google Sheets ('+new Date().toLocaleTimeString('id-ID')+').',true);
+ }catch(e){setStatus('Koneksi gagal: '+e.message+' Pastikan token benar, Apps Script sudah disimpan dan deployment web app sudah diperbarui.');}
+}
+$('connect').onclick=async()=>{try{setStatus('Memeriksa token dan server…');const p=await call('ping');await refresh();if(p&&p.spreadsheetId)setStatus('Koneksi server valid · Spreadsheet '+p.spreadsheetId,true);}catch(e){setStatus('Gagal terhubung: '+e.message);}};
+$('reload').onclick=refresh;
+$('backup').onclick=async()=>{try{const r=await call('backup');setStatus('Backup berhasil dibuat: '+r.name+' · '+r.url,true);}catch(e){setStatus('Backup gagal: '+e.message);}};
+document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{document.querySelectorAll('[data-tab]').forEach(x=>x.classList.toggle('active',x===b));['dash','tx','staff','attendance','payroll','calc'].forEach(id=>$(id).classList.toggle('hidden',id!==b.dataset.tab));});
+$('searchTx').oninput=renderTx;
+$('txform').elements.tanggal.value=new Date().toLocaleDateString('en-CA');
+$('txform').onsubmit=async e=>{e.preventDefault();const d=Object.fromEntries(new FormData(e.target));d.status=d.status||'draft';try{await call('saveTransaction',d);e.target.reset();e.target.elements.tanggal.value=new Date().toLocaleDateString('en-CA');e.target.elements.status.value='draft';await refresh();setStatus('Transaksi disimpan ke Sheets; pastikan status HPP dan rekonsiliasi.',true);}catch(err){setStatus('Transaksi gagal disimpan: '+err.message);}};
+$('staffform').onsubmit=async e=>{e.preventDefault();const d=Object.fromEntries(new FormData(e.target));d.aktif=true;d.tarifHarian=Number(d.tarifHarian||0);d.tarifLemburPerJam=Number(d.tarifLemburPerJam||0);try{await call('saveEmployee',d);e.target.reset();await refresh();setStatus('Karyawan disimpan ke Sheets.',true);}catch(err){setStatus('Gagal menyimpan karyawan: '+err.message);}};
+$('attform').onsubmit=async e=>{e.preventDefault();const d=Object.fromEntries(new FormData(e.target));const emp=state.employees.find(x=>String(x.id)===d.karyawanId);if(!emp){setStatus('Pilih karyawan yang sudah terdaftar.');return;}d.namaKaryawan=emp.nama;try{await call('saveAttendance',d);e.target.reset();e.target.elements.tanggal.value=new Date().toLocaleDateString('en-CA');await refresh();setStatus('Absensi disimpan.',true);}catch(err){setStatus('Gagal menyimpan absensi: '+err.message);}};
+function payrollPreview(){
+ const emp=state.employees.find(x=>String(x.id)===$('payEmployee').value);
+ if(!emp){$('payPreview').textContent='Pilih karyawan dan masukkan hari hadir serta lembur untuk melihat estimasi.';return;}
+ const days=num($('payform').elements.hariHadir.value), hours=num($('payform').elements.lemburJam.value), bonus=num($('payform').elements.bonus.value), cuts=num($('payform').elements.potongan.value);
+ $('payPreview').textContent='Estimasi: '+money(days*num(emp.tarifHarian)+hours*num(emp.tarifLemburPerJam)+bonus-cuts)+' = '+days+' hari × '+money(emp.tarifHarian)+' + '+hours+' jam × '+money(emp.tarifLemburPerJam)+' + bonus '+money(bonus)+' − potongan '+money(cuts)+'. Verifikasi sebelum bayar.';
+}
+['payEmployee'].forEach(id=>$(id).onchange=payrollPreview);
+['hariHadir','lemburJam','bonus','potongan'].forEach(name=>$('payform').elements[name].oninput=payrollPreview);
+$('payform').onsubmit=async e=>{e.preventDefault();const d=Object.fromEntries(new FormData(e.target));const emp=state.employees.find(x=>String(x.id)===d.karyawanId);if(!emp){setStatus('Pilih karyawan yang terdaftar.');return;}d.namaKaryawan=emp.nama;d.tarifHarian=num(emp.tarifHarian);d.tarifLemburPerJam=num(emp.tarifLemburPerJam);d.hariHadir=num(d.hariHadir);d.lemburJam=num(d.lemburJam);d.bonus=num(d.bonus);d.potongan=num(d.potongan);d.gajiPokok=d.hariHadir*d.tarifHarian;d.uangLembur=d.lemburJam*d.tarifLemburPerJam;d.total=d.gajiPokok+d.uangLembur+d.bonus-d.potongan;if(d.total<0){setStatus('Total gaji tidak boleh negatif.');return;}try{await call('savePayroll',d);e.target.reset();await refresh();setStatus('Rekap gaji tersimpan. Verifikasi absensi dan ketentuan sebelum pembayaran.',true);}catch(err){setStatus('Gagal menyimpan gaji: '+err.message);}};
+</script>
+</body>
+</html>
