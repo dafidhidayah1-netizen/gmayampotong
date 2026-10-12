@@ -12,6 +12,11 @@ import com.example.data.model.AyamKasCalculator
 import com.example.data.model.AyamKasFormatters
 import com.example.data.model.AyamKasSummary
 import com.example.data.model.AyamTransaction
+import com.example.data.model.CashFlow
+import com.example.data.model.ExternalLoan
+import com.example.data.model.EmployeeRecord
+import com.example.data.model.AttendanceRecord
+import com.example.data.model.PayrollRecord
 import com.example.data.model.AyamTransactionType
 import com.example.data.model.DeletedAyamTransaction
 import com.example.data.model.DoStockItem
@@ -54,6 +59,23 @@ class AyamKasViewModel(application: Application) : AndroidViewModel(application)
     val employees = repository.employees
     val attendance = repository.attendance
     val payroll = repository.payroll
+
+    val cashAccountBalances: StateFlow<Map<String, Double>> = combine(
+        repository.confirmedCashTransactions,
+        repository.cashFlows
+    ) { movements, transfers ->
+        val balances = linkedMapOf("DOMPET" to 0.0, "ATM/BANK" to 0.0, "QRIS" to 0.0)
+        movements.filter { it.status == "confirmed" && !it.deleted }.forEach { movement ->
+            val account = movement.accountName.ifBlank { "DOMPET" }
+            val amount = if (movement.direction == "IN") movement.amount else -movement.amount
+            balances[account] = (balances[account] ?: 0.0) + amount
+        }
+        transfers.filter { it.status == "confirmed" && it.amount > 0.0 }.forEach { transfer ->
+            balances[transfer.fromAccount] = (balances[transfer.fromAccount] ?: 0.0) - transfer.amount
+            balances[transfer.toAccount] = (balances[transfer.toAccount] ?: 0.0) + transfer.amount
+        }
+        balances
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
     val searchQuery = MutableStateFlow("")
     val typeFilter = MutableStateFlow("all")
@@ -503,7 +525,10 @@ class AyamKasViewModel(application: Application) : AndroidViewModel(application)
     fun saveCashFlow(flow: com.example.data.model.CashFlow) {
         viewModelScope.launch {
             runCatching { repository.saveCashFlow(flow) }
-                .onSuccess { _userMessage.emit("Transfer antar rekening tersimpan") }
+                .onSuccess {
+                    scheduleAutoSync()
+                    _userMessage.emit("Transfer antar rekening tersimpan")
+                }
                 .onFailure { _userMessage.emit(it.message ?: "Transfer gagal disimpan") }
         }
     }
@@ -511,7 +536,10 @@ class AyamKasViewModel(application: Application) : AndroidViewModel(application)
     fun saveExternalLoan(loan: com.example.data.model.ExternalLoan) {
         viewModelScope.launch {
             runCatching { repository.saveExternalLoan(loan) }
-                .onSuccess { _userMessage.emit("Catatan pinjaman tersimpan terpisah dari laba usaha") }
+                .onSuccess {
+                    scheduleAutoSync()
+                    _userMessage.emit("Catatan pinjaman tersimpan terpisah dari laba usaha")
+                }
                 .onFailure { _userMessage.emit(it.message ?: "Pinjaman gagal disimpan") }
         }
     }
@@ -519,7 +547,10 @@ class AyamKasViewModel(application: Application) : AndroidViewModel(application)
     fun saveEmployee(employee: com.example.data.model.EmployeeRecord) {
         viewModelScope.launch {
             runCatching { repository.saveEmployee(employee) }
-                .onSuccess { _userMessage.emit("Data karyawan tersimpan") }
+                .onSuccess {
+                    scheduleAutoSync()
+                    _userMessage.emit("Data karyawan tersimpan")
+                }
                 .onFailure { _userMessage.emit(it.message ?: "Karyawan gagal disimpan") }
         }
     }
@@ -527,7 +558,10 @@ class AyamKasViewModel(application: Application) : AndroidViewModel(application)
     fun saveAttendance(record: com.example.data.model.AttendanceRecord) {
         viewModelScope.launch {
             runCatching { repository.saveAttendance(record) }
-                .onSuccess { _userMessage.emit("Absensi tersimpan") }
+                .onSuccess {
+                    scheduleAutoSync()
+                    _userMessage.emit("Absensi tersimpan")
+                }
                 .onFailure { _userMessage.emit(it.message ?: "Absensi gagal disimpan") }
         }
     }
@@ -535,7 +569,10 @@ class AyamKasViewModel(application: Application) : AndroidViewModel(application)
     fun savePayroll(record: com.example.data.model.PayrollRecord) {
         viewModelScope.launch {
             runCatching { repository.savePayroll(record) }
-                .onSuccess { _userMessage.emit("Rekap payroll tersimpan") }
+                .onSuccess {
+                    scheduleAutoSync()
+                    _userMessage.emit("Rekap payroll tersimpan dan biaya gaji diposting ke buku usaha")
+                }
                 .onFailure { _userMessage.emit(it.message ?: "Payroll gagal disimpan") }
         }
     }
