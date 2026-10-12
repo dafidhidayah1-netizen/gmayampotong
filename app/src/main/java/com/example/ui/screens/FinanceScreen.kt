@@ -66,6 +66,7 @@ fun FinanceScreen(
 
     var loanDate by remember { mutableStateOf(today) }
     var party by remember { mutableStateOf("") }
+    var loanReference by remember { mutableStateOf("") }
     var loanType by remember { mutableStateOf("OWNER_LOAN") }
     var direction by remember { mutableStateOf("RECEIVED") }
     var loanAmount by remember { mutableStateOf("") }
@@ -151,10 +152,16 @@ fun FinanceScreen(
                     Text("Catatan ini tidak otomatis menambah omzet atau biaya operasional. Arah kasnya tetap masuk/keluar sesuai jenis peristiwa.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     OutlinedTextField(value = loanDate, onValueChange = { loanDate = it }, label = { Text("Tanggal (YYYY-MM-DD)") }, modifier = Modifier.fillMaxWidth().testTag("input_loan_date"), singleLine = true)
                     OutlinedTextField(value = party, onValueChange = { party = it }, label = { Text("Pihak / sumber pinjaman") }, modifier = Modifier.fillMaxWidth().testTag("input_loan_party"), singleLine = true)
+                    OutlinedTextField(
+                        value = loanReference, onValueChange = { loanReference = it },
+                        label = { Text("Referensi pinjaman (gunakan kode sama saat pelunasan)") },
+                        supportingText = { Text("Gunakan referensi yang sama untuk pencairan dan setiap angsuran agar sisa pinjaman dihitung akurat.") },
+                        modifier = Modifier.fillMaxWidth().testTag("input_loan_reference"), singleLine = true
+                    )
                     Text("Kategori")
                     OutlinedButton(onClick = { loanTypeMenu = true }, modifier = Modifier.fillMaxWidth().testTag("select_loan_type")) { Text(loanType) }
                     DropdownMenu(expanded = loanTypeMenu, onDismissRequest = { loanTypeMenu = false }) {
-                        listOf("OWNER_LOAN", "BUSINESS_BORROWING", "OWNER_PERSONAL", "UNEXPECTED_COST", "OWNER_INJECTION").forEach { a -> DropdownMenuItem(text = { Text(a) }, onClick = { loanType = a; loanTypeMenu = false }) }
+                        listOf("OWNER_LOAN", "BUSINESS_BORROWING", "BUSINESS_LENDING", "OWNER_PERSONAL", "UNEXPECTED_COST", "OWNER_INJECTION").forEach { a -> DropdownMenuItem(text = { Text(a) }, onClick = { loanType = a; loanTypeMenu = false }) }
                     }
                     Text("Arah kas")
                     OutlinedButton(onClick = { loanDirectionMenu = true }, modifier = Modifier.fillMaxWidth().testTag("select_loan_direction")) { Text(direction) }
@@ -175,9 +182,17 @@ fun FinanceScreen(
                     }
                     Button(onClick = {
                         val amount = loanAmount.toDoubleOrNull() ?: 0.0
-                        if (loanDate.length == 10 && party.isNotBlank() && amount > 0.0) {
-                            onSaveLoan(ExternalLoan(UUID.randomUUID().toString(), loanDate, party.trim(), loanType, direction, amount, amount, dueDate, loanAccount, loanNotes.trim(), if (confirmedLoan) "confirmed" else "draft", ""))
-                            party = ""; loanAmount = ""; dueDate = ""; loanNotes = ""
+                        val balanceTracked = loanType in listOf("OWNER_LOAN", "BUSINESS_BORROWING", "BUSINESS_LENDING")
+                        if (loanDate.length == 10 && party.isNotBlank() && amount > 0.0 &&
+                            (!balanceTracked || loanReference.isNotBlank()) &&
+                            (direction !in listOf("REPAYMENT", "COLLECTION") || loanReference.isNotBlank())
+                        ) {
+                            onSaveLoan(ExternalLoan(
+                                UUID.randomUUID().toString(), loanDate, party.trim(), loanReference.trim(),
+                                loanType, direction, amount, amount, dueDate, loanAccount, loanNotes.trim(),
+                                if (confirmedLoan) "confirmed" else "draft", ""
+                            ))
+                            party = ""; loanReference = ""; loanAmount = ""; dueDate = ""; loanNotes = ""
                         }
                     }, modifier = Modifier.fillMaxWidth().testTag("btn_save_loan")) { Text("Simpan Catatan Kas") }
                 }
@@ -204,7 +219,7 @@ fun FinanceScreen(
                 Column(Modifier.fillMaxWidth().padding(12.dp)) {
                     Text("${loan.direction} · ${loan.party}", fontWeight = FontWeight.Bold)
                     Text("${loan.date} · ${AyamKasFormatters.formatRupiah(loan.amount)}")
-                    Text("${loan.loanType} · akun ${loan.cashAccount} · ${loan.status}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("${loan.loanType} · ref ${loan.loanReference.ifBlank { "—" }} · akun ${loan.cashAccount} · ${loan.status}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     if (loan.notes.isNotBlank()) Text(loan.notes, style = MaterialTheme.typography.bodySmall)
                 }
             }
