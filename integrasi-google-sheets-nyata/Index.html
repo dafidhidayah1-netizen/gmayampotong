@@ -191,7 +191,28 @@ $('backup').onclick=async()=>{try{const r=await call('backup');setStatus('Backup
 document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{document.querySelectorAll('[data-tab]').forEach(x=>x.classList.toggle('active',x===b));['dash','tx','staff','attendance','payroll','calc'].forEach(id=>$(id).classList.toggle('hidden',id!==b.dataset.tab));});
 $('searchTx').oninput=renderTx;
 $('txform').elements.tanggal.value=todayLocal();
-$('txform').onsubmit=async e=>{e.preventDefault();const d=Object.fromEntries(new FormData(e.target));d.status=d.status||'draft';try{await call('saveTransaction',d);e.target.reset();e.target.elements.tanggal.value=todayLocal();e.target.elements.status.value='draft';await refresh();setStatus('Transaksi disimpan ke Sheets; pastikan status HPP dan rekonsiliasi.',true);}catch(err){setStatus('Transaksi gagal disimpan: '+err.message);}};
+$('txform').onsubmit=async e=>{
+ e.preventDefault();
+ const d=Object.fromEntries(new FormData(e.target));
+ d.status=d.status||'draft';
+ const amount=num(d.nominal), paid=d.dibayar===''?null:num(d.dibayar), kg=num(d.qtyKg), output=num(d.kgSiapJual);
+ if(d.status==='confirmed'&&['sale','purchase','expense'].includes(d.jenis)&&paid===null){setStatus('Isi pembayaran aktual; masukkan 0 jika belum dibayar. Nilai kosong tidak dianggap bukti pembayaran.');return;}
+ if(d.status==='confirmed'&&d.jenis==='purchase'){
+   const duplicate=state.transactions.some(x=>String(x.id)!==String(d.id||'')&&String(x.jenis)==='purchase'&&String(x.referensi||'').trim().toLowerCase()===String(d.referensi||'').trim().toLowerCase()&&String(x.deleted)!=='true');
+   if(!d.referensi||kg<=0||output<=0||output>kg||duplicate){setStatus('Pembelian terverifikasi harus memiliki nomor DO unik, kg masuk dan kg siap jual yang valid. Simpan sebagai draf jika data timbang belum lengkap.');return;}
+ }
+ if(d.status==='confirmed'&&d.jenis==='sale'){
+   const matches=state.transactions.filter(x=>String(x.jenis)==='purchase'&&String(x.status)==='confirmed'&&String(x.referensi||'').trim().toLowerCase()===String(d.batchRef||'').trim().toLowerCase()&&String(x.deleted)!=='true');
+   if(kg<=0||!d.batchRef||matches.length!==1){setStatus('Penjualan terverifikasi wajib memiliki kg terjual dan tertaut ke tepat satu DO terverifikasi.');return;}
+ }
+ if(d.status==='confirmed'&&d.jenis==='expense'&&d.batchRef){
+   const matches=state.transactions.filter(x=>String(x.jenis)==='purchase'&&String(x.status)==='confirmed'&&String(x.referensi||'').trim().toLowerCase()===String(d.batchRef).trim().toLowerCase()&&String(x.deleted)!=='true');
+   if(matches.length!==1){setStatus('Biaya langsung batch harus ditautkan ke tepat satu DO terverifikasi.');return;}
+ }
+ if(!Number.isFinite(amount)||amount<=0||(paid!==null&&(!Number.isFinite(paid)||paid<0||paid>amount))){setStatus('Periksa kembali nominal transaksi dan pembayaran aktual.');return;}
+ try{await call('saveTransaction',d);e.target.reset();e.target.elements.tanggal.value=todayLocal();e.target.elements.status.value='draft';await refresh();setStatus('Transaksi tersimpan ke Google Sheets. Periksa status HPP dan rekonsiliasi.',true);}
+ catch(err){setStatus('Transaksi gagal disimpan: '+err.message);}
+};
 $('staffform').onsubmit=async e=>{e.preventDefault();const d=Object.fromEntries(new FormData(e.target));d.aktif=true;d.tarifHarian=Number(d.tarifHarian||0);d.tarifLemburPerJam=Number(d.tarifLemburPerJam||0);try{await call('saveEmployee',d);e.target.reset();await refresh();setStatus('Karyawan disimpan ke Sheets.',true);}catch(err){setStatus('Gagal menyimpan karyawan: '+err.message);}};
 $('attform').onsubmit=async e=>{e.preventDefault();const d=Object.fromEntries(new FormData(e.target));const emp=state.employees.find(x=>String(x.id)===d.karyawanId);if(!emp){setStatus('Pilih karyawan yang sudah terdaftar.');return;}d.namaKaryawan=emp.nama;try{await call('saveAttendance',d);e.target.reset();e.target.elements.tanggal.value=todayLocal();await refresh();setStatus('Absensi disimpan.',true);}catch(err){setStatus('Gagal menyimpan absensi: '+err.message);}};
 function fillPayrollAttendance(){
