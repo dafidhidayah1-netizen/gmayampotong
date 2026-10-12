@@ -25,6 +25,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Assessment
 import androidx.compose.material.icons.filled.Backup
+import androidx.compose.material.icons.filled.Business
 import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.ReceiptLong
@@ -59,6 +60,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ui.screens.DashboardScreen
 import com.example.ui.screens.ReportsScreen
+import com.example.ui.screens.PurchaseDoScreen
 import com.example.ui.screens.StockScreen
 import com.example.ui.screens.ToolsBackupScreen
 import com.example.ui.screens.TransactionFormDialog
@@ -120,6 +122,7 @@ fun AyamKasApp(viewModel: AyamKasViewModel) {
     val reportBreakdown by viewModel.reportBreakdown.collectAsState()
 
     val isFormOpen by viewModel.isFormOpen.collectAsState()
+    val isPurchaseDoScreenOpen by viewModel.isPurchaseDoScreenOpen.collectAsState()
     val editingTransaction by viewModel.editingTransaction.collectAsState()
     val presetType by viewModel.presetType.collectAsState()
 
@@ -131,11 +134,11 @@ fun AyamKasApp(viewModel: AyamKasViewModel) {
     }
 
     // Back handling
-    BackHandler(enabled = isFormOpen || currentTab != AyamNavTab.DASHBOARD) {
-        if (isFormOpen) {
-            viewModel.closeForm()
-        } else if (currentTab != AyamNavTab.DASHBOARD) {
-            currentTab = AyamNavTab.DASHBOARD
+    BackHandler(enabled = isFormOpen || isPurchaseDoScreenOpen || currentTab != AyamNavTab.DASHBOARD) {
+        when {
+            isPurchaseDoScreenOpen -> viewModel.closePurchaseDoScreen()
+            isFormOpen -> viewModel.closeForm()
+            currentTab != AyamNavTab.DASHBOARD -> currentTab = AyamNavTab.DASHBOARD
         }
     }
 
@@ -162,7 +165,7 @@ fun AyamKasApp(viewModel: AyamKasViewModel) {
                             modifier = Modifier.size(36.dp)
                         ) {
                             Box(contentAlignment = Alignment.Center) {
-                                Text(text = "🐓", fontSize = 20.sp)
+                                Icon(imageVector = Icons.Default.Business, contentDescription = "Identitas perusahaan", tint = Color(0xFF123D32), modifier = Modifier.size(22.dp))
                             }
                         }
                         Spacer(modifier = Modifier.width(10.dp))
@@ -230,7 +233,7 @@ fun AyamKasApp(viewModel: AyamKasViewModel) {
         },
         floatingActionButton = {
             AnimatedVisibility(
-                visible = currentTab == AyamNavTab.DASHBOARD || currentTab == AyamNavTab.TRANSAKSI || currentTab == AyamNavTab.STOCK
+                visible = !isPurchaseDoScreenOpen && (currentTab == AyamNavTab.DASHBOARD || currentTab == AyamNavTab.TRANSAKSI || currentTab == AyamNavTab.STOCK)
             ) {
                 FloatingActionButton(
                     onClick = {
@@ -254,7 +257,32 @@ fun AyamKasApp(viewModel: AyamKasViewModel) {
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
-            when (currentTab) {
+            if (isPurchaseDoScreenOpen) {
+                PurchaseDoScreen(
+                    onCancel = { viewModel.closePurchaseDoScreen() },
+                    onSave = { date, doNumber, quantityKg, supplier, totalPrice, paidNow, paymentMethod, cashAccount,
+                               weightLossKg, mortalityRatePct, fcr, weightGainKg, feedPricePerKg, processingCost, notes, confirmed ->
+                        viewModel.savePurchaseDo(
+                            date = date,
+                            doNumber = doNumber,
+                            quantityKg = quantityKg,
+                            supplier = supplier,
+                            totalPrice = totalPrice,
+                            paidNow = paidNow,
+                            paymentMethod = paymentMethod,
+                            cashAccount = cashAccount,
+                            weightLossKg = weightLossKg,
+                            mortalityRatePct = mortalityRatePct,
+                            fcr = fcr,
+                            weightGainKg = weightGainKg,
+                            feedPricePerKg = feedPricePerKg,
+                            processingCost = processingCost,
+                            notes = notes,
+                            confirmed = confirmed
+                        )
+                    }
+                )
+            } else when (currentTab) {
                 AyamNavTab.DASHBOARD -> DashboardScreen(
                     summary = summary,
                     recentConfirmed = allTransactions.filter { it.isConfirmed },
@@ -335,7 +363,7 @@ fun AyamKasApp(viewModel: AyamKasViewModel) {
             presetType = presetType,
             availablePurchaseBatches = confirmedPurchases,
             onDismiss = { viewModel.closeForm() },
-            onSave = { id, date, ref, type, category, description, amount, paidAmount, qtyKg, batchRef, notes, isConfirmed ->
+            onSave = { id, date, ref, type, category, description, amount, paidAmount, qtyKg, batchRef, notes, isConfirmed, paymentMethod, cashAccount ->
                 viewModel.saveTransaction(
                     id = id,
                     date = date,
@@ -348,7 +376,16 @@ fun AyamKasApp(viewModel: AyamKasViewModel) {
                     qtyKg = qtyKg,
                     batchRef = batchRef,
                     notes = notes,
-                    isConfirmed = isConfirmed
+                    isConfirmed = isConfirmed,
+                    paymentMethod = paymentMethod,
+                    cashAccount = cashAccount,
+                    supplier = editingTransaction?.supplier.orEmpty(),
+                    weightLossKg = editingTransaction?.weightLossKg,
+                    mortalityRatePct = editingTransaction?.mortalityRatePct,
+                    fcr = editingTransaction?.fcr,
+                    weightGainKg = editingTransaction?.weightGainKg,
+                    feedPricePerKg = editingTransaction?.feedPricePerKg,
+                    processingCost = editingTransaction?.processingCost ?: 0.0
                 )
             }
         )
