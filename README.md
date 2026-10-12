@@ -1,79 +1,60 @@
 # AyamKas Pro — Pembukuan Usaha Ayam Potong
 
-Aplikasi Android native menggunakan Kotlin dan Jetpack Compose untuk pembukuan operasional usaha ayam potong (GM Ayam Potong). Data utama tersimpan lokal di Room Database sehingga pencatatan tetap dapat dilakukan offline. Sinkronisasi Google Sheets/Drive bersifat opsional dan baru aktif setelah pemilik mengatur Apps Script Web App. Tidak diperlukan add-on marketplace atau API pihak ketiga.
+Android native (Kotlin + Jetpack Compose) dengan Room sebagai penyimpanan lokal. Catatan yang disimpan pengguna tetap tersedia offline. Google Sheets/Drive merupakan sinkronisasi opsional yang perlu dipasang sendiri ke spreadsheet milik pemilik usaha.
 
-## Fitur Utama
+## Prinsip data nyata
 
-- **Dashboard Operasional & Ringkasan Keuangan:**
-  - Saldo kas tercatat (dari transaksi terverifikasi)
-  - Omzet penjualan ayam
-  - Biaya operasional harian & pakan
-  - Laba/rugi sementara yang hanya layak difinalkan setelah HPP, basis berat, pembayaran, dan stok direkonsiliasi
-  - Total stok ayam tercatat (kg) & estimasi nilai sisa persediaan
-  - Rekap Utang DO & Piutang Penjualan
-  - Indikator Kualitas Pencatatan (% terverifikasi, penjualan tanpa HPP, status draf)
-  - Mutasi kas terbaru (+ / −)
+- Instalasi baru **tidak memuat transaksi historis secara otomatis**. Data hanya muncul melalui input pengguna atau pemulihan cadangan. Catatan historis awal yang tersedia sebagai opsi pemulihan berstatus draf dan tetap perlu diverifikasi.
+- Form input, validasi, kalkulasi, arsip, dan ekspor/pulihkan menggunakan database Room. Data yang belum lengkap tidak boleh dianggap laba final.
+- Saldo kas, omzet, HPP, stok, piutang, utang, transfer, dan pinjaman dicatat terpisah. Nominal faktur bukan otomatis jumlah kas yang diterima/dibayar.
+- Logo/nama perusahaan dan mode tema System/Light/Dark disimpan di pengaturan perangkat.
 
-- **Buku Transaksi:**
-  - 7 Jenis transaksi spesifik: Modal Masuk Owner, Pembelian DO Ayam, Penjualan / Omzet, Biaya Operasional, Prive / Modal Keluar, Bayar Utang DO, dan Terima Piutang Pelanggan.
-  - Alur verifikasi: 33 catatan historis awal dimuat sebagai draf agar tidak masuk saldo/laporan resmi sebelum dokumen, tanggal, pembayaran, berat, dan tautan DO ditinjau.
-  - Filter pencarian, filter jenis transaksi, filter status (Semua / Draf / Terverifikasi), dan filter bulan.
-  - Aksi Tinjau/Edit, Konfirmasi/Batalkan Verifikasi, dan Hapus.
+## Modul Android
 
-- **DO & Stok Ayam Potong:**
-  - Kontrol berat pembelian (kg), kg terjual tertaut, dan sisa stok ayam per nomor DO.
-  - Perhitungan HPP per kg per DO; beberapa baris pembelian dengan referensi DO yang sama digabung menggunakan biaya/kg tertimbang.
-  - Penandaan status: Terhitung, HPP Belum Lengkap, atau Stok Negatif.
+- **Dashboard:** saldo buku, omzet, laba kotor dan margin, laba sementara, sisa stok layak jual, nilai persediaan, dan rincian penerimaan Tunai/Transfer/QRIS serta metode historis yang belum dipetakan.
+- **Transaksi:** modal, pembelian DO, penjualan, biaya, bayar utang, terima piutang, dan prive/modal keluar; pencarian, filter, draf, konfirmasi, arsip, dan pemulihan.
+- **DO & Stok:** satu referensi unik per pengiriman, kuantitas, supplier, nilai DO, pembayaran, penyusutan, kematian, pertambahan berat/FCR opsional, biaya pakan/pemotongan, kg layak jual, HPP/kg, penjualan tertaut, dan sisa stok.
+- **Kas & Pinjaman:** saldo terpisah DOMPET, ATM/BANK, QRIS dan akun belum dipetakan; transfer antar-akun; pinjaman/pinjaman owner, pinjaman usaha dan pemberian pinjaman ke pihak lain dengan referensi tetap untuk menghitung saldo terutang.
+- **Karyawan & Payroll:** tarif harian, jam standar shift, tarif lembur, absensi, jam masuk/keluar, istirahat, lembur otomatis, tunjangan, potongan, pembayaran, dan posting biaya gaji yang disetujui.
+- **Laporan:** ringkasan kas dan laba-rugi, HPP yang ditautkan ke DO, validasi data, ekspor CSV.
+- **Kalkulator HPP karkas:** hasil baru muncul setelah pengguna memasukkan bobot/harga/rendemen/biaya/target sendiri; aplikasi tidak mengisi harga atau rendemen contoh sebagai hasil bisnis.
+- **Cadangan:** ekspor JSON lengkap v2 untuk transaksi aktif, arsip terhapus, kas, transfer, pinjaman, karyawan, absensi, dan payroll; pemulihan v2 mengganti tabel yang tercakup. JSON v1 lama berisi transaksi saja dan mempertahankan tabel tambahan.
 
-- **Laporan Keuangan & Laba Rugi:**
-  - Filter rentang tanggal fleksibel (Dari Tanggal s/d Sampai Tanggal).
-  - Ringkasan P&L: Omzet − HPP Ayam Terjual − Biaya Operasional = Laba/Rugi.
-  - Rekapitulasi per jenis transaksi.
-  - Ekspor laporan dan data transaksi ke file CSV (kompatibel Excel & Google Sheets).
+## Rumus operasional
 
-- **Kalkulator Ayam Potong & Alat Cadangan:**
-  - Kalkulator HPP & Marjin Penjualan Karkas (Bobot Hidup, Rendemen Karkas %, Biaya Potong, Target Laba per kg, BEP, dan Rekomendasi Harga Jual).
-  - Ekspor Cadangan Lengkap (JSON kompatibel AyamKas Pro).
-  - Pulihkan Data dari JSON.
-  - Bagikan ringkasan pembukuan via WhatsApp.
-  - Reset & Pulihkan Data Draf Awal.
+**Berat layak jual (kg)** = kg pembelian + pertambahan berat terukur − penyusutan terukur − kematian ekuivalen berat.  
+**Biaya batch** = nilai DO + biaya pakan (FCR × pertambahan berat × harga pakan/kg, bila ketiganya diisi lengkap) + biaya proses/pemotongan.  
+**HPP per kg layak jual** = biaya batch ÷ kg layak jual.  
+**HPP terjual** = jumlah kg penjualan tertaut ke DO × HPP/kg DO sumber.  
+**Sisa stok DO (kg)** = kg layak jual − kg penjualan tertaut.  
+**Laba kotor** = omzet − HPP barang terjual. **Laba sementara** = laba kotor − biaya operasional terpisah.
 
+Penyusutan, kematian, pertambahan berat dan penjualan harus menggunakan satu basis berat yang konsisten. Jika berat pembelian merupakan ayam hidup sedangkan penjualan adalah karkas, ukur hasil karkas/susut aktual dan jangan memakai laba sebagai final sebelum data itu lengkap. Biaya pakan/pemotongan jangan dihitung dua kali sebagai biaya batch dan biaya operasional.
 
-## Integrasi Google Sheets & Drive
+## Integrasi Google Sheets/Drive
 
-Konektor yang direkomendasikan untuk APK ini ada di \`cloud-sync/Code.gs\`. Gunakan **Ekstensi → Apps Script** dari spreadsheet yang akan menjadi buku utama—tidak perlu memilih Add-on/API Connector dari menu yang terlihat pada screenshot.
+Sumber backend: [cloud-sync/Code.gs](cloud-sync/Code.gs)  
+Panduan deployment: [cloud-sync/README.md](cloud-sync/README.md)
 
-1. Buat **salinan spreadsheet uji baru**. Jangan jalankan uji pertama di buku kas aktif.
-2. Buka **Ekstensi → Apps Script**, ganti isi editor dengan file [\`cloud-sync/Code.gs\`](cloud-sync/Code.gs), lalu simpan.
-3. Kembali ke spreadsheet dan muat ulang. Buka menu **AyamKas Pro → Siapkan / Periksa Lembar**.
-4. Pilih **AyamKas Pro → Buat / Ganti Kunci Sinkronisasi**. Kunci ini diperlukan selain URL; simpan rahasia dan jangan membagikannya.
-5. Pilih **Deploy → New deployment → Web app**, jalankan sebagai akun pemilik spreadsheet, lalu setel akses yang sesuai. Konektor Android sederhana membutuhkan endpoint yang dapat menerima POST tanpa layar login interaktif; jika akses anonim tidak diizinkan oleh akun/organisasi, autentikasi Google/OAuth tambahan perlu dibuat.
-6. Salin URL deployment yang berakhiran \`/exec\` dan kunci ke panel Cloud di APK. Tekan **Sinkronkan Sekarang**.
-7. Uji dari dua arah: buat draf di HP dan pastikan masuk ke Sheets; edit transaksi di lembar \`Transaksi\` dan pastikan muncul di HP setelah sinkronisasi. Edit bidang transaksi di Sheets akan membuat statusnya kembali menjadi draf sampai ditinjau dan dikonfirmasi.
-8. Uji backup spreadsheet ke Drive dan ekspor JSON lokal secara terpisah.
+1. Buat **salinan spreadsheet uji**.
+2. Buka **Ekstensi → Apps Script**, tempel `cloud-sync/Code.gs`, simpan, dan muat ulang spreadsheet.
+3. Gunakan menu **AyamKas Pro → Siapkan / Periksa Lembar**, lalu **Buat / Ganti Kunci Sinkronisasi**.
+4. Deploy sebagai **Web app** yang menerima POST. Konektor sederhana ini memakai URL `/exec` + kunci API; bila akses tanpa login interaktif tidak diizinkan oleh administrator, OAuth Google perlu ditambahkan.
+5. Masukkan URL dan kunci pada panel Cloud Android, lalu uji sinkronisasi dari kedua arah pada spreadsheet uji.
+6. Opsional: aktifkan backup harian melalui menu **AyamKas Pro**. Backup Drive hanya menyalin spreadsheet; ekspor JSON lokal Android tetap perlu disimpan terpisah.
 
-Petunjuk lengkap: [\`cloud-sync/README.md\`](cloud-sync/README.md).
+Tabel sinkronisasi mencakup Transaksi, KasTransaksi, KasTransfer, PinjamanLuar, Karyawan, Absensi, Payroll, Ringkasan, KartuDO, Validasi, dan LogSinkronisasi. Data dipadukan berdasarkan ID stabil dan waktu pembaruan; perubahan manual di Sheets yang menyangkut data bisnis dikembalikan menjadi draf untuk ditinjau.
 
-## Alur hitung dan batasan akuntansi
+## Batas yang harus diketahui
 
-- **Kas** dihitung dari uang yang benar-benar diterima/dibayar, bukan hanya nominal invoice. Isi pembayaran aktual; gunakan Rp0 untuk transaksi kredit yang belum dibayar/diterima. Kolom pembayaran kosong diperlakukan sebagai Rp0 dan diberi peringatan.
-- **Omzet** adalah nilai penjualan yang terverifikasi, bukan otomatis saldo kas.
-- **HPP** saat ini memakai biaya DO dibagi kg pembelian dikalikan kg terjual. Rumus ini benar hanya bila kg pembelian dan kg yang dijual menggunakan basis berat yang sama. Jika membeli ayam hidup tetapi menjual karkas, wajib catat kg hasil karkas, susut/hasil samping, dan biaya pemotongan sebelum laba dinyatakan final.
-- **Laba sementara** = omzet − HPP terjual − biaya operasional yang dicatat. Biaya tenaga kerja langsung/pemotongan jangan dimasukkan dua kali: putuskan apakah dicatat dalam biaya konversi HPP atau sebagai biaya periode sesuai rancangan pembukuan.
-- **Piutang dan utang yang ada masih agregat**, belum laporan umur invoice per pelanggan/supplier. Pembayaran perlu tertaut ke invoice/DO agar dapat dihitung akurat per tagihan.
-- **Absensi/gaji belum terhubung** dalam sinkronisasi Android–Sheets ini; catat gaji aktual sebagai biaya sampai modul payroll dibangun dan tersambung ke buku yang sama.
-- **Data historis pada instalasi baru berstatus draf.** Perubahan ini tidak otomatis mengubah status data yang sudah tersimpan di HP. Cadangkan JSON sebelum mengubah data lama atau menggunakan fitur reset/pulihkan.
+- **Koneksi belum otomatis aktif hanya karena kode ada di GitHub.** Backend harus disalin/deploy ke spreadsheet pemilik dan diuji add/edit/konfirmasi/hapus/backup dua arah. Jangan gunakan spreadsheet operasional sebelum tes itu lulus.
+- Piutang dan utang agregat belum sama dengan aging per invoice; pembayaran harus memakai referensi faktur/DO untuk laporan per tagihan.
+- Perhitungan payroll memakai tarif shift dan lembur yang diatur pemilik; periksa peraturan kerja/pajak yang berlaku sebelum pembayaran.
+- Tidak ada sinkronisasi background 24 jam ketika aplikasi dihentikan paksa. Auto-sync berjalan saat aplikasi digunakan/online dan setelah perubahan yang memicunya.
+- Versi APK dari CI bertanda tangan **debug sementara**; bukan rilisan produksi. APK ini mungkin tidak dapat dipasang sebagai update di atas instalasi bertanda tangan kunci berbeda. Sebelum migrasi/penggantian APK, ekspor JSON lengkap.
 
-## Sumber standar dan implementasi
+## Referensi implementasi
 
-- IAS 2 menjelaskan biaya persediaan mencakup biaya pembelian, biaya konversi (termasuk tenaga kerja langsung dan overhead produksi), serta biaya lain agar barang siap pada kondisi/lokasi sekarang. Rumus biaya persediaan untuk barang yang saling dapat dipertukarkan lazim menggunakan FIFO atau rata-rata tertimbang. [IFRS — IAS 2 Inventories](https://www.ifrs.org/issued-standards/list-of-standards/ias-2-inventories/)
-- Google Apps Script Web App menggunakan handler \`doGet(e)\` atau \`doPost(e)\` dan deployment memiliki pengaturan akses serta identitas eksekusi. [Dokumentasi resmi Apps Script Web Apps](https://developers.google.com/apps-script/guides/web)
-- Script memakai \`LockService\` untuk menghindari tabrakan ketika beberapa proses memperbarui spreadsheet bersamaan. [Dokumentasi resmi LockService](https://developers.google.com/apps-script/reference/lock/lock-service)
-
-## Teknologi & Arsitektur
-
-- **Bahasa:** Kotlin
-- **UI Framework:** Jetpack Compose (Material 3)
-- **Arsitektur:** MVVM (Model-View-ViewModel) + Clean Architecture
-- **Penyimpanan Data:** Room Database (SQLite lokal terenkapsulasi)
-- **Tema:** Palet Hijau Hutan & Emerald khas AyamKas Pro
+- [Apps Script Web Apps](https://developers.google.com/apps-script/guides/web)
+- [Apps Script LockService](https://developers.google.com/apps-script/reference/lock/lock-service)
+- [IFRS IAS 2 — Inventories](https://www.ifrs.org/issued-standards/list-of-standards/ias-2-inventories/)
