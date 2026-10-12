@@ -51,6 +51,7 @@ import com.example.ui.components.StatusPill
 @Composable
 fun DashboardScreen(
     summary: AyamKasSummary,
+    cashAccountBalances: Map<String, Double> = emptyMap(),
     recentConfirmed: List<AyamTransaction>,
     onNavigateToTransactions: () -> Unit,
     onNavigateToStock: () -> Unit,
@@ -247,6 +248,27 @@ fun DashboardScreen(
             }
         }
 
+        item {
+            Card(
+                modifier = Modifier.fillMaxWidth().testTag("dashboard_cash_accounts"),
+                shape = RoundedCornerShape(14.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+            ) {
+                Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Saldo per Akun Kas", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    listOf("DOMPET" to "Dompet", "ATM/BANK" to "ATM / Bank", "QRIS" to "QRIS", "BELUM_DIPETAKAN" to "Belum dipetakan").forEach { (key,label) ->
+                        val amount = cashAccountBalances[key]
+                        if (amount != null || key == "DOMPET" || key == "ATM/BANK" || key == "QRIS") {
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text(label, style = MaterialTheme.typography.bodyMedium)
+                                Text(AyamKasFormatters.formatRupiah(amount ?: 0.0), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                            }
+                        }
+                    }
+                    Text("Saldo berasal dari transaksi kas, transfer dan pinjaman terverifikasi. Cocokkan dengan kas fisik, rekening koran dan settlement QRIS.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        }
         item {
             Card(
                 modifier = Modifier.fillMaxWidth().testTag("dashboard_gross_margin_and_payment_breakdown"),
