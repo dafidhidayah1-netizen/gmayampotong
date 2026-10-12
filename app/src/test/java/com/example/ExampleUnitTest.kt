@@ -34,8 +34,8 @@ class ExampleUnitTest {
         assertTrue(summary.profit > 0.0)
         assertTrue(summary.stockKg > 0.0)
         assertTrue(summary.stockValue > 0.0)
-        assertEquals(0, summary.outputWeightMissingCount)
-        assertTrue(summary.profitComplete) // Historic purchases do not yet contain verified yield weights.
+        assertTrue(summary.outputWeightMissingCount > 0)
+        assertTrue(!summary.profitComplete) // Historic purchases do not yet contain verified yield weights.
         // Utang DO from DO F-001 (5.484.000 - 3.000.000 = 2.484.000)
         assertEquals(2484000.0, summary.ap, 0.001)
     }
@@ -87,8 +87,8 @@ class ExampleUnitTest {
         assertEquals(100000.0, summary.expenses, 0.001)
         // Profit = 1.200.000 - 800.000 - 100.000 = 300.000
         assertEquals(300000.0, summary.profit, 0.001)
-        assertTrue(summary.outputWeightMissingCount > 0)
-        assertTrue(!summary.profitComplete)
+        assertEquals(0, summary.outputWeightMissingCount)
+        assertTrue(summary.profitComplete)
 
         val stockRows = AyamKasCalculator.calculateStockRows(transactions)
         assertEquals(1, stockRows.size)
