@@ -1,16 +1,31 @@
 package com.example
 
-import org.junit.Assert.assertTrue
+import com.example.data.model.AyamKasCalculator
+import com.example.data.model.AyamTransaction
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Test
 
-/**
- * Keep this as a plain JVM smoke test. Robolectric's configured API 36 runtime
- * failed in the CI image, while the real Android resource/UI build is checked
- * by assembleDebug and instrumentation tests remain available separately.
- */
+/** Plain JVM smoke test; does not require Robolectric or Android SDK runtime emulation. */
 class ExampleRobolectricTest {
     @Test
-    fun appNameResourceIsGenerated() {
-        assertTrue(R.string.app_name > 0)
+    fun confirmedSaleWithoutLinkedBatchIsNotReportedAsCompleteProfit() {
+        val sale = AyamTransaction(
+            id = "TEST-SALE",
+            date = "2026-10-13",
+            ref = "PJ-TEST",
+            type = "sale",
+            description = "Penjualan tanpa tautan DO",
+            amount = 500000.0,
+            paidAmount = 500000.0,
+            qtyKg = 10.0,
+            batchRef = "",
+            status = "confirmed"
+        )
+
+        val summary = AyamKasCalculator.calculate(listOf(sale))
+
+        assertEquals(1, summary.unknownSales)
+        assertFalse(summary.profitComplete)
     }
 }
