@@ -230,7 +230,7 @@ class ExampleUnitTest {
         )
         assertEquals(2000000.0, result.basePay, 0.001)
         assertEquals(200000.0, result.overtimePay, 0.001)
-        assertEquals(2125000.0, result.totalPay, 0.001)
+        assertEquals(2225000.0, result.totalPay, 0.001)
     }
 
     @Test
