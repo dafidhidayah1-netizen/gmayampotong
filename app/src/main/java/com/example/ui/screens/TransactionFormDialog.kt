@@ -72,6 +72,7 @@ fun TransactionFormDialog(
         amount: Double,
         paidAmount: Double?,
         qtyKg: Double?,
+        saleableKg: Double?,
         batchRef: String,
         notes: String,
         isConfirmed: Boolean
@@ -96,6 +97,9 @@ fun TransactionFormDialog(
         mutableStateOf(
             if (transaction?.qtyKg != null) transaction.qtyKg.toString() else ""
         )
+    }
+    var saleableKgText by remember {
+        mutableStateOf(if (transaction?.saleableKg != null) transaction.saleableKg.toString() else "")
     }
     var batchRef by remember { mutableStateOf(transaction?.batchRef ?: "") }
     var notes by remember { mutableStateOf(transaction?.notes ?: "") }
@@ -348,6 +352,25 @@ fun TransactionFormDialog(
                     )
                 }
 
+                // Net weight after cutting/shrinkage, used as the denominator for batch HPP.
+                if (type == "purchase") {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    OutlinedTextField(
+                        value = saleableKgText,
+                        onValueChange = { saleableKgText = it },
+                        label = { Text("Berat bersih siap jual / karkas (kg)") },
+                        placeholder = { Text("Contoh: 720 untuk 1.000 kg masuk") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        supportingText = {
+                            Text("Isi hasil timbang setelah potong/susut. Jika kosong, HPP memakai kg pembelian sementara dan laba ditandai belum lengkap.")
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("input_tx_saleable_qty"),
+                        singleLine = true
+                    )
+                }
+
                 // Batch DO linkage
                 if (showBatch) {
                     Spacer(modifier = Modifier.height(12.dp))
@@ -472,9 +495,42 @@ fun TransactionFormDialog(
                                 return@Button
                             }
                             val qty = qtyKgText.toDoubleOrNull()
+                            val saleableKg = saleableKgText.toDoubleOrNull()
                             if (type == "purchase" && (qty == null || qty <= 0.0)) {
                                 errorMessage = "Pembelian DO wajib mengisi berat kg ayam."
                                 return@Button
+                            }
+                            if (type == "purchase" && saleableKgText.isNotBlank() && (saleableKg == null || saleableKg <= 0.0)) {
+                                errorMessage = "Berat bersih siap jual harus berupa angka lebih dari nol, atau kosongkan untuk ditinjau nanti."
+                                return@Button
+                            }
+                            if (type == "purchase" && saleableKg != null && qty != null && saleableKg > qty + 0.0001) {
+                                errorMessage = "Berat siap jual tidak boleh melebihi berat masuk."
+                                return@Button
+                            }
+                            if (isConfirmed && type == "purchase" && ref.isBlank()) {
+                                errorMessage = "Nomor DO wajib diisi sebelum pembelian diverifikasi."
+                                return@Button
+                            }
+                            if (isConfirmed && type == "purchase" && (saleableKg == null || saleableKg <= 0.0)) {
+                                errorMessage = "Isi berat bersih siap jual terlebih dahulu, atau simpan sebagai draf sampai hasil timbang tersedia."
+                                return@Button
+                            }
+                            if (isConfirmed && type == "purchase" && availablePurchaseBatches.any {
+                                    it.id != transaction?.id && it.ref.equals(ref.trim(), ignoreCase = true)
+                                }) {
+                                errorMessage = "Nomor DO ini sudah digunakan. Gunakan nomor DO yang unik."
+                                return@Button
+                            }
+                            if (isConfirmed && type == "sale") {
+                                if (qty == null || qty <= 0.0 || batchRef.isBlank()) {
+                                    errorMessage = "Penjualan terverifikasi wajib mengisi kg dan menautkan ke DO pembelian."
+                                    return@Button
+                                }
+                                if (availablePurchaseBatches.count { it.ref.equals(batchRef.trim(), ignoreCase = true) } != 1) {
+                                    errorMessage = "Pilih tepat satu DO pembelian yang sudah terverifikasi."
+                                    return@Button
+                                }
                             }
                             if (description.isBlank()) {
                                 errorMessage = "Keterangan transaksi wajib diisi."
@@ -491,6 +547,7 @@ fun TransactionFormDialog(
                                 amt,
                                 paidAmt,
                                 qty,
+                                saleableKg,
                                 batchRef,
                                 notes,
                                 isConfirmed
