@@ -185,10 +185,10 @@ class ExampleUnitTest {
         )
         val summary = AyamKasCalculator.calculate(transactions)
 
-        // Saleable kg = 100 - 5 kg weight loss - (100 * 2%) mortality = 93 kg.
+        // Saleable kg = 100 purchased + 10 measured gain - 5 loss - 2 mortality = 103 kg.
         // Batch cost = Rp2,000,000 + (FCR 2 * gain 10 kg * feed Rp5,000) + processing Rp50,000.
-        val expectedUnitCost = 2150000.0 / 93.0
-        assertEquals(83.0, summary.stockKg, 0.001)
+        val expectedUnitCost = 2150000.0 / 103.0
+        assertEquals(93.0, summary.stockKg, 0.001)
         assertEquals(expectedUnitCost * 10.0, summary.cogs, 0.001)
         assertEquals(500000.0 - expectedUnitCost * 10.0, summary.grossProfit, 0.001)
         assertTrue(summary.profitComplete)
