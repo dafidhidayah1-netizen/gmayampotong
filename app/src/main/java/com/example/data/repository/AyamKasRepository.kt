@@ -203,10 +203,69 @@ class AyamKasRepository(
 
     suspend fun toggleConfirm(id: String, currentStatus: String) {
         val current = dao.getTransactionById(id) ?: return
-        val newStatus = if (currentStatus == "confirmed") "draft" else "confirmed"
-        val saved = current.copy(status = newStatus, updatedAt = nowIso())
+        val confirming = currentStatus != "confirmed"
+        if (confirming) validateForConfirmation(current)
+        val saved = current.copy(status = if (confirming) "confirmed" else "draft", updatedAt = nowIso())
         dao.insertTransaction(saved)
         updateCashMirror(saved)
+    }
+
+    suspend fun confirmTransaction(id: String) {
+        val current = dao.getTransactionById(id) ?: throw IllegalArgumentException("Transaksi tidak ditemukan")
+        validateForConfirmation(current)
+        val saved = current.copy(status = "confirmed", updatedAt = nowIso())
+        dao.insertTransaction(saved)
+        updateCashMirror(saved)
+    }
+
+    private suspend fun validateForConfirmation(tx: AyamTransaction) {
+        require(tx.date.matches(Regex("\\d{4}-\\d{2}-\\d{2}"))) { "Tanggal harus berformat YYYY-MM-DD" }
+        require(tx.amount > 0.0) { "Nominal harus lebih dari nol" }
+        if (tx.type in listOf("sale", "purchase", "expense")) {
+            require(tx.paidAmount != null && tx.paidAmount >= 0.0 && tx.paidAmount <= tx.amount) {
+                "Pembayaran aktual wajib diisi; gunakan Rp0 untuk transaksi kredit"
+            }
+        }
+        when (tx.type) {
+            "purchase" -> {
+                require(tx.ref.isNotBlank()) { "Referensi DO wajib diisi" }
+                require(tx.supplier.isNotBlank()) { "Nama supplier wajib diisi" }
+                require((tx.qtyKg ?: 0.0) > 0.0) { "Berat DO wajib lebih dari nol" }
+                require(tx.weightLossKg != null && tx.weightLossKg >= 0.0 && tx.weightLossKg <= (tx.qtyKg ?: 0.0)) {
+                    "Penyusutan aktual wajib dicatat dan tidak boleh melebihi kg DO"
+                }
+                require(tx.mortalityRatePct != null && tx.mortalityRatePct in 0.0..100.0) {
+                    "Persentase kematian wajib dicatat (0–100%)"
+                }
+                require(tx.processingCost >= 0.0) { "Biaya proses tidak boleh negatif" }
+                val all = dao.getAllTransactions().first()
+                require(all.none { it.id != tx.id && it.type == "purchase" && it.ref.trim().equals(tx.ref.trim(), ignoreCase = true) }) {
+                    "Referensi DO sudah digunakan oleh transaksi lain"
+                }
+                val hasAllFeedInputs = tx.fcr != null && tx.weightGainKg != null && tx.feedPricePerKg != null
+                val hasNoFeedInputs = tx.fcr == null && tx.weightGainKg == null && tx.feedPricePerKg == null
+                require(hasAllFeedInputs || hasNoFeedInputs) {
+                    "Isi FCR, pertambahan berat, dan harga pakan secara lengkap atau kosongkan semuanya"
+                }
+            }
+            "sale" -> {
+                require((tx.qtyKg ?: 0.0) > 0.0) { "Kg penjualan wajib lebih dari nol" }
+                require(tx.batchRef.isNotBlank()) { "Penjualan wajib ditautkan ke DO sumber" }
+                val all = dao.getAllTransactions().first()
+                val purchase = all.firstOrNull {
+                    it.type == "purchase" && it.isConfirmed &&
+                        it.ref.trim().equals(tx.batchRef.trim(), ignoreCase = true)
+                } ?: throw IllegalArgumentException("DO sumber tidak ditemukan atau belum terverifikasi")
+                require(tx.date >= purchase.date) { "Tanggal penjualan tidak boleh sebelum tanggal pembelian DO" }
+                val salesWithoutThis = all.filterNot { it.id == tx.id }
+                val available = AyamKasCalculator.calculateStockRows(salesWithoutThis)
+                    .firstOrNull { it.purchaseTx.ref.trim().equals(tx.batchRef.trim(), ignoreCase = true) }
+                    ?.remainingKg ?: 0.0
+                require((tx.qtyKg ?: 0.0) <= available + 0.0001) {
+                    "Stok DO ${tx.batchRef} tidak cukup; tersedia ${AyamKasFormatters.formatNumber(available)} kg"
+                }
+            }
+        }
     }
 
     /** Merge Room data with the Apps Script ledger by stable ID and update timestamp. */
