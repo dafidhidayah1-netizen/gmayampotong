@@ -6,10 +6,17 @@ object AyamKasCalculator {
         val label: String,
         val purchaseKg: Double,
         val purchaseCost: Double,
-        val soldKg: Double
+        val weightLossKg: Double,
+        val mortalityKg: Double,
+        val processingCost: Double,
+        val feedCost: Double,
+        val soldKg: Double,
+        val productionDataComplete: Boolean
     ) {
-        val remainingKg: Double get() = purchaseKg - soldKg
-        val costPerKg: Double get() = if (purchaseKg > 0) purchaseCost / purchaseKg else 0.0
+        val saleableKg: Double get() = (purchaseKg - weightLossKg - mortalityKg).coerceAtLeast(0.0)
+        val totalCost: Double get() = purchaseCost + processingCost + feedCost
+        val remainingKg: Double get() = saleableKg - soldKg
+        val costPerKg: Double get() = if (saleableKg > 0) totalCost / saleableKg else 0.0
     }
 
 
@@ -42,6 +49,26 @@ object AyamKasCalculator {
             val batchRef = batchPurchases.firstOrNull { it.ref.isNotBlank() }?.ref?.trim().orEmpty()
             val purchaseKg = batchPurchases.sumOf { (it.qtyKg ?: 0.0).coerceAtLeast(0.0) }
             val purchaseCost = batchPurchases.sumOf { it.amount.coerceAtLeast(0.0) }
+            val weightLossKg = batchPurchases.sumOf { (it.weightLossKg ?: 0.0).coerceAtLeast(0.0) }
+            val mortalityKg = batchPurchases.sumOf { p ->
+                val rate = (p.mortalityRatePct ?: 0.0).coerceIn(0.0, 100.0)
+                (p.qtyKg ?: 0.0).coerceAtLeast(0.0) * rate / 100.0
+            }
+            val processingCost = batchPurchases.sumOf { it.processingCost.coerceAtLeast(0.0) }
+            val feedCost = batchPurchases.sumOf { p ->
+                val fcr = p.fcr
+                val gain = p.weightGainKg
+                val feedPrice = p.feedPricePerKg
+                if (fcr != null && gain != null && feedPrice != null &&
+                    fcr >= 0.0 && gain >= 0.0 && feedPrice >= 0.0
+                ) fcr * gain * feedPrice else 0.0
+            }
+            val productionDataComplete = batchPurchases.all { p ->
+                p.weightLossKg != null && p.mortalityRatePct != null &&
+                    (p.fcr == null && p.weightGainKg == null && p.feedPricePerKg == null ||
+                     p.fcr != null && p.weightGainKg != null && p.feedPricePerKg != null &&
+                     p.fcr >= 0.0 && p.weightGainKg >= 0.0 && p.feedPricePerKg >= 0.0)
+            }
             val soldKg = if (batchRef.isBlank()) 0.0 else allSales
                 .filter { it.batchRef.trim().equals(batchRef, ignoreCase = true) }
                 .sumOf { (it.qtyKg ?: 0.0).coerceAtLeast(0.0) }
@@ -51,32 +78,42 @@ object AyamKasCalculator {
                     ?: "Tanpa ref (${batchPurchases.firstOrNull()?.id.orEmpty()})",
                 purchaseKg = purchaseKg,
                 purchaseCost = purchaseCost,
-                soldKg = soldKg
+                weightLossKg = weightLossKg,
+                mortalityKg = mortalityKg,
+                processingCost = processingCost,
+                feedCost = feedCost,
+                soldKg = soldKg,
+                productionDataComplete = productionDataComplete
             )
         }
-
         var cogs = 0.0
         var knownSales = 0
         var unknownSales = 0
         var stockKg = 0.0
         var stockValue = 0.0
+        var feedCost = 0.0
+        var batchDataIncomplete = 0
         val negativeStockBatches = mutableListOf<String>()
 
         batchCosts.values.forEach { batch ->
             val remaining = batch.remainingKg
             stockKg += remaining
             stockValue += remaining.coerceAtLeast(0.0) * batch.costPerKg
+            feedCost += batch.feedCost
+            if (!batch.productionDataComplete || batch.saleableKg <= 0.0 || batch.totalCost <= 0.0) {
+                batchDataIncomplete++
+            }
             if (remaining < -0.0001) {
                 negativeStockBatches.add(batch.reference.ifBlank { batch.label })
             }
         }
 
-        for (s in revenueTx) {
-            val br = s.batchRef.trim().lowercase()
-            val batch = batchCosts[br]
-            val saleQty = s.qtyKg ?: 0.0
-            if (saleQty > 0 && br.isNotBlank() && batch != null &&
-                batch.purchaseKg > 0 && batch.purchaseCost > 0
+        for (sale in revenueTx) {
+            val batchKey = sale.batchRef.trim().lowercase()
+            val batch = batchCosts[batchKey]
+            val saleQty = sale.qtyKg ?: 0.0
+            if (saleQty > 0.0 && batchKey.isNotBlank() && batch != null &&
+                batch.saleableKg > 0.0 && batch.totalCost > 0.0
             ) {
                 cogs += batch.costPerKg * saleQty
                 knownSales++
@@ -103,8 +140,10 @@ object AyamKasCalculator {
         val ap = (purchaseTotal - paidPurchases - supplierPayments).coerceAtLeast(0.0)
 
         val profitBeforeCogs = revenue - expenses
-        val profit = profitBeforeCogs - cogs
-        val profitComplete = (unknownSales == 0 && negativeStockBatches.isEmpty())
+        val grossProfit = revenue - cogs
+        val profit = grossProfit - expenses
+        val grossMarginPercent = if (revenue > 0.0) grossProfit / revenue * 100.0 else 0.0
+        val profitComplete = (unknownSales == 0 && negativeStockBatches.isEmpty() && batchDataIncomplete == 0)
 
         val confirmedCount = confirmedList.size
         val draftCount = allTransactions.count { it.isDraft }
@@ -146,7 +185,14 @@ object AyamKasCalculator {
             paidSales = paidSales,
             paidPurchases = paidPurchases,
             qtyMissingCount = qtyMissingCount,
-            paymentMissingCount = paymentMissingCount
+            paymentMissingCount = paymentMissingCount,
+            salesCash = revenueTx.filter { it.paymentMethod.equals("CASH", true) }.sumOf { it.paidAmount ?: 0.0 },
+            salesTransfer = revenueTx.filter { it.paymentMethod.equals("TRANSFER", true) }.sumOf { it.paidAmount ?: 0.0 },
+            salesQris = revenueTx.filter { it.paymentMethod.equals("QRIS", true) }.sumOf { it.paidAmount ?: 0.0 },
+            grossProfit = grossProfit,
+            grossMarginPercent = grossMarginPercent,
+            batchDataIncomplete = batchDataIncomplete,
+            feedCost = feedCost
         )
     }
 
@@ -163,26 +209,43 @@ object AyamKasCalculator {
             val first = batchPurchases.first()
             val ref = batchPurchases.firstOrNull { it.ref.isNotBlank() }?.ref?.trim().orEmpty()
             val purchasedKg = batchPurchases.sumOf { (it.qtyKg ?: 0.0).coerceAtLeast(0.0) }
-            val totalCost = batchPurchases.sumOf { it.amount.coerceAtLeast(0.0) }
+            val baseCost = batchPurchases.sumOf { it.amount.coerceAtLeast(0.0) }
+            val weightLossKg = batchPurchases.sumOf { (it.weightLossKg ?: 0.0).coerceAtLeast(0.0) }
+            val mortalityKg = batchPurchases.sumOf { p ->
+                (p.qtyKg ?: 0.0).coerceAtLeast(0.0) *
+                    (p.mortalityRatePct ?: 0.0).coerceIn(0.0, 100.0) / 100.0
+            }
+            val processCost = batchPurchases.sumOf { it.processingCost.coerceAtLeast(0.0) }
+            val feedCost = batchPurchases.sumOf { p ->
+                if (p.fcr != null && p.weightGainKg != null && p.feedPricePerKg != null)
+                    p.fcr.coerceAtLeast(0.0) * p.weightGainKg.coerceAtLeast(0.0) * p.feedPricePerKg.coerceAtLeast(0.0)
+                else 0.0
+            }
+            val totalCost = baseCost + processCost + feedCost
+            val saleableKg = (purchasedKg - weightLossKg - mortalityKg).coerceAtLeast(0.0)
             val linkedSales = if (ref.isBlank()) emptyList() else sales.filter {
                 it.batchRef.trim().equals(ref, ignoreCase = true)
             }
             val soldKg = linkedSales.sumOf { (it.qtyKg ?: 0.0).coerceAtLeast(0.0) }
             val missingSalesCount = linkedSales.count { it.qtyKg == null || it.qtyKg <= 0.0 }
-            val remainingKg = purchasedKg - soldKg
-            val unitCost = if (purchasedKg > 0) totalCost / purchasedKg else 0.0
+            val remainingKg = saleableKg - soldKg
+            val unitCost = if (saleableKg > 0) totalCost / saleableKg else 0.0
             val remainingValue = remainingKg.coerceAtLeast(0.0) * unitCost
+            val productionComplete = batchPurchases.all { p ->
+                p.weightLossKg != null && p.mortalityRatePct != null &&
+                    (p.fcr == null && p.weightGainKg == null && p.feedPricePerKg == null ||
+                     p.fcr != null && p.weightGainKg != null && p.feedPricePerKg != null)
+            }
 
             val status = when {
-                purchasedKg <= 0 || totalCost <= 0 -> "HPP Belum Lengkap"
+                saleableKg <= 0.0 || totalCost <= 0.0 -> "HPP Belum Lengkap"
                 remainingKg < -0.0001 -> "Stok Negatif"
-                missingSalesCount > 0 -> "HPP Belum Lengkap"
+                !productionComplete || missingSalesCount > 0 -> "HPP Belum Lengkap"
                 else -> "Terhitung"
             }
 
             DoStockItem(
-                // Aggregate rows sharing one DO reference and calculate a weighted unit cost.
-                purchaseTx = first.copy(ref = ref, qtyKg = purchasedKg, amount = totalCost),
+                purchaseTx = first.copy(ref = ref, qtyKg = purchasedKg, amount = baseCost),
                 soldKg = soldKg,
                 missingSalesCount = missingSalesCount,
                 totalPurchasedKg = purchasedKg,
