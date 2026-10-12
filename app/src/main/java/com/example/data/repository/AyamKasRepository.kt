@@ -201,13 +201,25 @@ class AyamKasRepository(
         val activeIds = localTransactions.map { it.id }.toSet()
         val deletionsToSend = localDeleted.filterNot { it.originalId in activeIds }
 
-        val response = client.sync(url, apiKey, localTransactions, deletionsToSend)
+        val response = client.sync(
+            url = url,
+            apiKey = apiKey,
+            transactions = localTransactions,
+            deletedTransactions = deletionsToSend,
+            cashTransactions = businessDao.observeCashTransactions().first(),
+            cashFlows = businessDao.observeCashFlows().first(),
+            externalLoans = businessDao.observeExternalLoans().first(),
+            employees = businessDao.observeEmployees().first(),
+            attendance = businessDao.observeAttendance().first(),
+            payroll = businessDao.observePayroll().first()
+        )
         var pulled = 0
 
         response.transactions.forEach { remote ->
             val local = dao.getTransactionById(remote.id)
             if (local == null || timestamp(remote.updatedAt) > timestamp(local.updatedAt)) {
                 dao.insertTransaction(remote)
+                updateCashMirror(remote)
                 pulled++
             }
         }
@@ -219,6 +231,50 @@ class AyamKasRepository(
             } else if (timestamp(remoteDeleted.deletedAt) >= timestamp(local.updatedAt)) {
                 dao.insertDeleted(remoteDeleted)
                 dao.deleteTransaction(local.id)
+                businessDao.deleteCashForSource(local.id)
+                pulled++
+            }
+        }
+
+        response.cashTransactions.forEach { remote ->
+            val existing = businessDao.observeCashTransactions().first().firstOrNull { it.id == remote.id }
+            if (existing == null || timestamp(remote.updatedAt) > timestamp(existing.updatedAt)) {
+                businessDao.saveCashTransaction(remote)
+                pulled++
+            }
+        }
+        response.cashFlows.forEach { remote ->
+            val existing = businessDao.observeCashFlows().first().firstOrNull { it.id == remote.id }
+            if (existing == null || timestamp(remote.updatedAt) > timestamp(existing.updatedAt)) {
+                businessDao.saveCashFlow(remote)
+                pulled++
+            }
+        }
+        response.externalLoans.forEach { remote ->
+            val existing = businessDao.observeExternalLoans().first().firstOrNull { it.id == remote.id }
+            if (existing == null || timestamp(remote.updatedAt) > timestamp(existing.updatedAt)) {
+                businessDao.saveExternalLoan(remote)
+                pulled++
+            }
+        }
+        response.employees.forEach { remote ->
+            val existing = businessDao.observeEmployees().first().firstOrNull { it.id == remote.id }
+            if (existing == null || timestamp(remote.updatedAt) > timestamp(existing.updatedAt)) {
+                businessDao.saveEmployee(remote)
+                pulled++
+            }
+        }
+        response.attendance.forEach { remote ->
+            val existing = businessDao.observeAttendance().first().firstOrNull { it.id == remote.id }
+            if (existing == null || timestamp(remote.updatedAt) > timestamp(existing.updatedAt)) {
+                businessDao.saveAttendance(remote)
+                pulled++
+            }
+        }
+        response.payroll.forEach { remote ->
+            val existing = businessDao.observePayroll().first().firstOrNull { it.id == remote.id }
+            if (existing == null || timestamp(remote.updatedAt) > timestamp(existing.updatedAt)) {
+                businessDao.savePayroll(remote)
                 pulled++
             }
         }
