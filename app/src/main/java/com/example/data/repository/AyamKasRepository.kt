@@ -6,11 +6,21 @@ import com.example.data.model.AyamTransactionType
 import com.example.data.model.DeletedAyamTransaction
 import com.example.data.model.InitialAyamData
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
+import com.example.data.remote.GoogleSheetsSyncClient
+import java.time.Instant
 import org.json.JSONArray
 import org.json.JSONObject
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+
+data class CloudSyncStats(
+    val serverAccepted: Int,
+    val pulled: Int,
+    val totalOnServer: Int,
+    val spreadsheetId: String
+)
 
 class AyamKasRepository(
     private val dao: AyamKasDao
@@ -26,13 +36,64 @@ class AyamKasRepository(
     }
 
     suspend fun saveTransaction(tx: AyamTransaction) {
-        val nowIso = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US).format(Date())
-        dao.insertTransaction(tx.copy(updatedAt = nowIso))
+        dao.insertTransaction(tx.copy(updatedAt = Instant.now().toString()))
     }
 
     suspend fun toggleConfirm(id: String, currentStatus: String) {
+        val current = dao.getTransactionById(id) ?: return
         val newStatus = if (currentStatus == "confirmed") "draft" else "confirmed"
-        dao.updateStatus(id, newStatus)
+        dao.insertTransaction(current.copy(status = newStatus, updatedAt = Instant.now().toString()))
+    }
+
+    /** Merge Room data with the Apps Script ledger by stable ID and update timestamp. */
+    suspend fun syncWithGoogleSheets(
+        client: GoogleSheetsSyncClient,
+        url: String,
+        apiKey: String
+    ): CloudSyncStats {
+        val initialLocal = dao.getAllTransactions().first()
+        val localTransactions = initialLocal.map { tx ->
+            if (tx.updatedAt.isBlank()) tx.copy(updatedAt = Instant.now().toString()).also {
+                dao.insertTransaction(it)
+            } else tx
+        }
+        val localDeleted = dao.getAllDeleted().first()
+        val activeIds = localTransactions.map { it.id }.toSet()
+        val deletionsToSend = localDeleted.filterNot { it.originalId in activeIds }
+
+        val response = client.sync(url, apiKey, localTransactions, deletionsToSend)
+        var pulled = 0
+
+        response.transactions.forEach { remote ->
+            val local = dao.getTransactionById(remote.id)
+            if (local == null || timestamp(remote.updatedAt) > timestamp(local.updatedAt)) {
+                dao.insertTransaction(remote)
+                pulled++
+            }
+        }
+
+        response.deletedTransactions.forEach { remoteDeleted ->
+            val local = dao.getTransactionById(remoteDeleted.originalId)
+            if (local == null) {
+                dao.insertDeleted(remoteDeleted)
+            } else if (timestamp(remoteDeleted.deletedAt) >= timestamp(local.updatedAt)) {
+                dao.insertDeleted(remoteDeleted)
+                dao.deleteTransaction(local.id)
+                pulled++
+            }
+        }
+
+        return CloudSyncStats(
+            serverAccepted = response.accepted,
+            pulled = pulled,
+            totalOnServer = response.transactions.size,
+            spreadsheetId = response.spreadsheetId
+        )
+    }
+
+    private fun timestamp(value: String): Long {
+        if (value.isBlank()) return Long.MIN_VALUE
+        return try { Instant.parse(value).toEpochMilli() } catch (_: Exception) { Long.MIN_VALUE }
     }
 
     suspend fun setStatus(id: String, status: String) {
@@ -40,7 +101,7 @@ class AyamKasRepository(
     }
 
     suspend fun deleteTransaction(tx: AyamTransaction) {
-        val nowIso = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
+        val nowIso = Instant.now().toString()
         val deleted = DeletedAyamTransaction(
             id = "DEL-${System.currentTimeMillis()}",
             originalId = tx.id,
@@ -77,19 +138,66 @@ class AyamKasRepository(
             notes = deleted.notes,
             status = deleted.status,
             source = deleted.source,
-            updatedAt = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US).format(Date())
+            updatedAt = Instant.now().toString()
         )
         dao.insertTransaction(restored)
         dao.deleteDeleted(deleted.id)
     }
 
     suspend fun clearAll() {
+        val now = Instant.now().toString()
+        dao.getAllTransactions().first().forEach { tx ->
+            dao.insertDeleted(
+                DeletedAyamTransaction(
+                    id = "DEL-\${tx.id}",
+                    originalId = tx.id,
+                    deletedAt = now,
+                    date = tx.date,
+                    ref = tx.ref,
+                    type = tx.type,
+                    category = tx.category,
+                    description = tx.description,
+                    amount = tx.amount,
+                    paidAmount = tx.paidAmount,
+                    qtyKg = tx.qtyKg,
+                    batchRef = tx.batchRef,
+                    notes = tx.notes,
+                    status = tx.status,
+                    source = tx.source
+                )
+            )
+        }
         dao.clearAll()
     }
 
     suspend fun restoreDefaultData() {
+        val old = dao.getAllTransactions().first()
+        val defaults = InitialAyamData.REAL_TRANSACTIONS
+        val defaultIds = defaults.map { it.id }.toSet()
+        val now = Instant.now().toString()
+        old.filterNot { it.id in defaultIds }.forEach { tx ->
+            dao.insertDeleted(
+                DeletedAyamTransaction(
+                    id = "DEL-\${tx.id}",
+                    originalId = tx.id,
+                    deletedAt = now,
+                    date = tx.date,
+                    ref = tx.ref,
+                    type = tx.type,
+                    category = tx.category,
+                    description = tx.description,
+                    amount = tx.amount,
+                    paidAmount = tx.paidAmount,
+                    qtyKg = tx.qtyKg,
+                    batchRef = tx.batchRef,
+                    notes = tx.notes,
+                    status = tx.status,
+                    source = tx.source
+                )
+            )
+        }
         dao.clearAll()
-        dao.insertAll(InitialAyamData.REAL_TRANSACTIONS)
+        dao.insertAll(defaults.map { it.copy(updatedAt = now) })
     }
 
     fun generateJsonExport(transactions: List<AyamTransaction>): String {
