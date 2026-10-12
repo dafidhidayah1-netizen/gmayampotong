@@ -95,9 +95,10 @@ fun FinanceScreen(
                 Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text("Saldo kas menurut akun", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                     Text("Total kas tercatat: ${AyamKasFormatters.formatRupiah(balanceTotal)}", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-                    listOf("DOMPET", "ATM/BANK", "QRIS").forEach { account ->
+                    Text("Total ini mencakup transaksi terverifikasi di semua akun; rekonsiliasi dengan rekening koran dan kas fisik.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    listOf("DOMPET", "ATM/BANK", "QRIS", "BELUM_DIPETAKAN").forEach { account ->
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text(account, style = MaterialTheme.typography.bodyMedium)
+                            Text(if (account == "BELUM_DIPETAKAN") "BELUM DIPETAKAN · data historis" else account, style = MaterialTheme.typography.bodyMedium)
                             Text(AyamKasFormatters.formatRupiah(cashBalances[account] ?: 0.0), fontWeight = FontWeight.SemiBold)
                         }
                     }
