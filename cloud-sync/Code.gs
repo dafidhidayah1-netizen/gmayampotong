@@ -84,6 +84,22 @@ function onEdit(e) {
     const lastRow = firstRow + e.range.getNumRows() - 1;
     const now = new Date().toISOString();
     for (let row = firstRow; row <= lastRow; row++) {
+      const idCell = sh.getRange(row, cols.id);
+      const dateValue = sh.getRange(row, cols.date).getValue();
+      const typeValue = String(sh.getRange(row, cols.type).getValue() || '').trim();
+      const amountValue = Number(sh.getRange(row, cols.amount).getValue());
+      const hasRequiredBase = dateValue !== '' && dateValue !== null &&
+        typeValue !== '' && Number.isFinite(amountValue) && amountValue > 0;
+      if (!String(idCell.getDisplayValue() || '').trim() && hasRequiredBase) {
+        // New rows entered in Sheets get a stable ID only after their required
+        // date/type/positive amount fields are present; they start as drafts.
+        idCell.setValue(Utilities.getUuid());
+        if (!String(sh.getRange(row, cols.status).getValue() || '').trim()) {
+          sh.getRange(row, cols.status).setValue('draft');
+        }
+      }
+      if (!String(idCell.getDisplayValue() || '').trim()) continue;
+
       const deletedCell = sh.getRange(row, cols.deleted);
       const isDeleted = deletedCell.getValue() === true ||
         String(deletedCell.getValue()).toLowerCase() === 'true';
@@ -468,7 +484,7 @@ function refreshAyamKasReports() {
   if (oldSumRows > 0) sum.getRange(2,1,oldSumRows,sum.getLastColumn()).clearContent();
   const doRange = function(name) {
     const letter = columnLetter_(doCols[name]);
-    return "'KartuDO'!$" + letter + "$2:$" + letter + "$1000";
+    return "'KartuDO'!$" + letter + "$2:$" + letter;
   };
   const valRange = function(name) {
     const letter = columnLetter_(valCols[name]);
@@ -550,7 +566,13 @@ function columnLetter_(column) {
 }
 function rowToObject_(headers,row) {
   const o = {};
-  headers.forEach(function(h,i){o[h]=row[i] instanceof Date ? row[i].toISOString() : row[i];});
+  headers.forEach(function(h,i) {
+    if (row[i] instanceof Date && h === 'date') {
+      o[h] = Utilities.formatDate(row[i], Session.getScriptTimeZone(), 'yyyy-MM-dd');
+    } else {
+      o[h] = row[i] instanceof Date ? row[i].toISOString() : row[i];
+    }
+  });
   return o;
 }
 function number_(v) {
