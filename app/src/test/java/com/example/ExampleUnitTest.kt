@@ -22,7 +22,7 @@ class ExampleUnitTest {
     fun testRealOperationalDataAndCalculator() {
         val realData = InitialAyamData.REAL_TRANSACTIONS
         assertEquals(33, realData.size)
-        assertTrue(realData.all { it.isConfirmed })
+        assertTrue(realData.all { it.isConfirmed }) // The repository imports these operational examples as drafts until checked.
 
         val summary = AyamKasCalculator.calculate(realData)
         assertEquals(33, summary.confirmedCount)
@@ -50,6 +50,7 @@ class ExampleUnitTest {
                 amount = 2000000.0,
                 paidAmount = 2000000.0,
                 qtyKg = 100.0,
+                saleableKg = 100.0,
                 status = "confirmed"
             ),
             AyamTransaction(
@@ -84,7 +85,8 @@ class ExampleUnitTest {
         assertEquals(100000.0, summary.expenses, 0.001)
         // Profit = 1.200.000 - 800.000 - 100.000 = 300.000
         assertEquals(300000.0, summary.profit, 0.001)
-        assertTrue(summary.profitComplete)
+        assertTrue(summary.outputWeightMissingCount > 0)
+        assertTrue(!summary.profitComplete)
 
         val stockRows = AyamKasCalculator.calculateStockRows(transactions)
         assertEquals(1, stockRows.size)
@@ -96,6 +98,56 @@ class ExampleUnitTest {
         assertEquals(20000.0, row.unitCost, 0.001) // 2.000.000 / 100 = 20.000 per kg
         assertEquals(1200000.0, row.remainingValue, 0.001) // 60 * 20.000 = 1.200.000
         assertEquals("Terhitung", row.status)
+    }
+ 
+    @Test
+    fun testBatchCostIncludesDirectExpenseAndUsesOutputWeightAcrossMonths() {
+        val purchase = AyamTransaction(
+            id = "PUR-SEP", date = "2026-09-30", ref = "DO-HIST",
+            type = "purchase", description = "Pembelian sebelum periode laporan",
+            amount = 1000000.0, paidAmount = 1000000.0,
+            qtyKg = 100.0, saleableKg = 80.0, status = "confirmed"
+        )
+        val batchCost = AyamTransaction(
+            id = "EXP-SEP", date = "2026-09-30", ref = "EXP-HIST",
+            type = "expense", category = "Biaya potong",
+            description = "Biaya langsung DO", amount = 200000.0,
+            paidAmount = 200000.0, batchRef = "DO-HIST", status = "confirmed"
+        )
+        val sale = AyamTransaction(
+            id = "SALE-OCT", date = "2026-10-02", ref = "INV-OCT",
+            type = "sale", description = "Penjualan dari DO sebelumnya",
+            amount = 1600000.0, paidAmount = 1600000.0,
+            qtyKg = 40.0, batchRef = "DO-HIST", status = "confirmed"
+        )
+
+        // The report filter only contains October sales, while historical purchase and batch costs
+        // remain available to derive the correct HPP.
+        val summary = AyamKasCalculator.calculate(listOf(purchase, batchCost, sale), listOf(sale))
+        assertEquals(1600000.0, summary.revenue, 0.001)
+        assertEquals(600000.0, summary.cogs, 0.001) // ((1,000,000 + 200,000) / 80) * 40
+        assertEquals(1600000.0, summary.expenses, 0.001) // No unrelated operating expenses in this period.
+        assertEquals(1000000.0, summary.profit, 0.001)
+        assertEquals(40.0, summary.stockKg, 0.001)
+    }
+
+    @Test
+    fun testMissingPaymentIsNotAssumedToBeCash() {
+        val purchase = AyamTransaction(
+            id = "PUR-CASH", date = "2026-10-01", ref = "DO-CASH",
+            type = "purchase", description = "DO belum dibayar",
+            amount = 500000.0, paidAmount = 0.0,
+            qtyKg = 25.0, saleableKg = 25.0, status = "confirmed"
+        )
+        val sale = AyamTransaction(
+            id = "SALE-CASH", date = "2026-10-01", ref = "INV-CASH",
+            type = "sale", description = "Penjualan belum diterima",
+            amount = 700000.0, paidAmount = 0.0,
+            qtyKg = 10.0, batchRef = "DO-CASH", status = "confirmed"
+        )
+        val summary = AyamKasCalculator.calculate(listOf(purchase, sale))
+        assertEquals(0.0, summary.cash, 0.001)
+        assertEquals(700000.0, summary.revenue, 0.001)
     }
 
     @Test
