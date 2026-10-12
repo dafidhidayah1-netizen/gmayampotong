@@ -63,6 +63,8 @@ data class EmployeeRecord(
     val name: String,
     val position: String,
     val dailyRate: Double,
+    @androidx.room.ColumnInfo(defaultValue = "8.0") val standardHoursPerShift: Double,
+    @androidx.room.ColumnInfo(defaultValue = "0.0") val overtimeRatePerHour: Double,
     val active: Boolean,
     val updatedAt: String
 )
