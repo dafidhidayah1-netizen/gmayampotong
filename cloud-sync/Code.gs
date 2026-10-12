@@ -8,7 +8,7 @@
 const APP_NAME = 'AyamKas Pro';
 const API_KEY_PROPERTY = 'AYAMKAS_ANDROID_API_KEY';
 const TABLES = {
-  Transaksi: ['id','updatedAt','date','ref','type','category','description','amount','paidAmount','qtyKg','batchRef','notes','status','source','deleted','deletedAt','cashEffect','effectivePaid'],
+  Transaksi: ['id','updatedAt','date','ref','type','category','description','amount','paidAmount','qtyKg','batchRef','notes','status','source','deleted','deletedAt','cashEffect','effectivePaid','paymentMethod','cashAccount','supplier','weightLossKg','mortalityRatePct','fcr','weightGainKg','feedPricePerKg','processingCost'],
   Ringkasan: ['Indikator','Nilai','Keterangan'],
   KartuDO: ['Ref DO','Tanggal DO','Kg Pembelian','Nilai DO (Rp)','HPP per Kg (Rp)','Kg Terjual','Sisa Kg','Nilai Stok (Rp)','Status Stok/HPP'],
   Validasi: ['Level','Kategori','ID Transaksi','Tanggal','Referensi','Peringatan'],
@@ -289,6 +289,15 @@ function normalizeTx_(tx) {
     source:String(tx.source || 'android'),
     deleted:tx.deleted === true || String(tx.deleted) === 'true',
     deletedAt:String(tx.deletedAt || ''),
+    paymentMethod:String(tx.paymentMethod || 'CASH'),
+    cashAccount:String(tx.cashAccount || 'DOMPET'),
+    supplier:String(tx.supplier || ''),
+    weightLossKg:tx.weightLossKg === null || tx.weightLossKg === undefined || tx.weightLossKg === '' ? '' : number_(tx.weightLossKg),
+    mortalityRatePct:tx.mortalityRatePct === null || tx.mortalityRatePct === undefined || tx.mortalityRatePct === '' ? '' : number_(tx.mortalityRatePct),
+    fcr:tx.fcr === null || tx.fcr === undefined || tx.fcr === '' ? '' : number_(tx.fcr),
+    weightGainKg:tx.weightGainKg === null || tx.weightGainKg === undefined || tx.weightGainKg === '' ? '' : number_(tx.weightGainKg),
+    feedPricePerKg:tx.feedPricePerKg === null || tx.feedPricePerKg === undefined || tx.feedPricePerKg === '' ? '' : number_(tx.feedPricePerKg),
+    processingCost:number_(tx.processingCost),
     cashEffect:''
   };
 }
