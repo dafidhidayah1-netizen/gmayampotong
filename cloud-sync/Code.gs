@@ -176,8 +176,10 @@ function handleAuxSheetEdit_(sh,e) {
         if(profile.draftStatus && cols.status && !String(sh.getRange(row,cols.status).getValue()||'').trim()) {
           sh.getRange(row,cols.status).setValue(sh.getName()==='Payroll'?'DRAFT':'draft');
         }
-        if(sh.getName()==='Karyawan' && !String(sh.getRange(row,cols.active).getValue()||'').trim()) {
-          sh.getRange(row,cols.active).setValue(true);
+        if(sh.getName()==='Karyawan') {
+          const activeCell=sh.getRange(row,cols.active);
+          const activeValue=activeCell.getValue();
+          if(activeValue==='' || activeValue===null) activeCell.setValue(true);
         }
       }
       if(profile.draftStatus && cols.status && editedHeaders.some(function(header){return header!=='status';})) {
