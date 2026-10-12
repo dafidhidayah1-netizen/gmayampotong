@@ -92,7 +92,36 @@ class AyamKasRepository(
         require(loan.amount > 0.0) { "Nominal pinjaman/arus harus lebih dari nol" }
         require(loan.paidAmount >= 0.0 && loan.paidAmount <= loan.amount) { "Nominal dibayar harus di antara nol dan nilai pinjaman" }
         require(loan.party.isNotBlank()) { "Nama pihak pinjaman wajib diisi" }
-        val saved = loan.copy(updatedAt = nowIso())
+        val debtTypes = setOf("OWNER_LOAN", "BUSINESS_BORROWING")
+        val lendingTypes = setOf("BUSINESS_LENDING")
+        val tracksLoanBalance = loan.loanType in debtTypes || loan.loanType in lendingTypes
+        val loanRef = loan.loanReference.trim()
+        if (tracksLoanBalance) require(loanRef.isNotBlank()) { "Referensi pinjaman wajib diisi untuk menghitung sisa pinjaman" }
+        val allLoans = businessDao.observeExternalLoans().first()
+        if (loan.direction == "REPAYMENT" || loan.direction == "COLLECTION") {
+            require(loanRef.isNotBlank()) { "Pelunasan wajib memakai referensi pinjaman asal" }
+            val sourceDirection = if (loan.direction == "REPAYMENT") "RECEIVED" else "GIVEN"
+            val allowedType = if (loan.direction == "REPAYMENT") debtTypes else lendingTypes
+            require(loan.loanType in allowedType) {
+                if (loan.direction == "REPAYMENT") "Pelunasan harus memilih kategori pinjaman yang diterima usaha" else "Penagihan harus memilih kategori pinjaman yang diberikan usaha"
+            }
+            val principal = allLoans.filter {
+                it.loanReference.trim().equals(loanRef, ignoreCase = true) &&
+                    it.loanType == loan.loanType && it.direction == sourceDirection &&
+                    it.status == "confirmed" && it.id != loan.id
+            }.sumOf { it.amount }
+            require(principal > 0.0) { "Referensi pinjaman asal tidak ditemukan atau belum terverifikasi" }
+            val previousSettlement = allLoans.filter {
+                it.loanReference.trim().equals(loanRef, ignoreCase = true) &&
+                    it.loanType == loan.loanType && it.direction == loan.direction &&
+                    it.status == "confirmed" && it.id != loan.id
+            }.sumOf { it.amount }
+            val outstanding = (principal - previousSettlement).coerceAtLeast(0.0)
+            require(loan.amount <= outstanding + 0.0001) {
+                "Nominal pelunasan/penagihan melebihi saldo referensi pinjaman (${AyamKasFormatters.formatRupiah(outstanding)})"
+            }
+        }
+        val saved = loan.copy(loanReference = loanRef, updatedAt = nowIso())
         businessDao.saveExternalLoan(saved)
         val sourceId = "LOAN-${saved.id}"
         val incoming = saved.direction == "RECEIVED" || saved.direction == "COLLECTION"
