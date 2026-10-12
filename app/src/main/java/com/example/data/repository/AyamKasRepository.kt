@@ -89,10 +89,34 @@ class AyamKasRepository(
     }
 
     suspend fun saveExternalLoan(loan: ExternalLoan) {
-        require(loan.amount > 0.0) { "Nominal pinjaman harus lebih dari nol" }
+        require(loan.amount > 0.0) { "Nominal pinjaman/arus harus lebih dari nol" }
         require(loan.paidAmount >= 0.0 && loan.paidAmount <= loan.amount) { "Nominal dibayar harus di antara nol dan nilai pinjaman" }
         require(loan.party.isNotBlank()) { "Nama pihak pinjaman wajib diisi" }
-        businessDao.saveExternalLoan(loan.copy(updatedAt = nowIso()))
+        val saved = loan.copy(updatedAt = nowIso())
+        businessDao.saveExternalLoan(saved)
+        val sourceId = "LOAN-${saved.id}"
+        val incoming = saved.direction == "RECEIVED" || saved.direction == "COLLECTION"
+        if (saved.status == "confirmed") {
+            businessDao.saveCashTransaction(
+                CashTransaction(
+                    id = "CASH-${sourceId}",
+                    sourceTransactionId = sourceId,
+                    date = saved.date,
+                    accountName = saved.cashAccount,
+                    direction = if (incoming) "IN" else "OUT",
+                    amount = saved.amount,
+                    paymentMethod = "CASH",
+                    category = saved.loanType,
+                    description = "${saved.direction}: ${saved.party}",
+                    notes = saved.notes,
+                    status = saved.status,
+                    updatedAt = saved.updatedAt,
+                    deleted = false
+                )
+            )
+        } else {
+            businessDao.deleteCashForSource(sourceId)
+        }
     }
 
     suspend fun saveEmployee(employee: EmployeeRecord) {
@@ -114,7 +138,28 @@ class AyamKasRepository(
         require(record.daysPresent >= 0.0 && record.overtimeHours >= 0.0) { "Hari hadir/jam lembur tidak boleh negatif" }
         require(record.deductions >= 0.0 && record.paidAmount >= 0.0 && record.paidAmount <= record.totalPay) { "Potongan/pembayaran tidak valid" }
         require(record.totalPay >= 0.0) { "Total upah tidak boleh negatif" }
-        businessDao.savePayroll(record.copy(updatedAt = nowIso()))
+        val saved = record.copy(updatedAt = nowIso())
+        businessDao.savePayroll(saved)
+        // Approved payroll becomes one linked expense row. The actual paid amount,
+        // not the whole payroll value, is the cash movement.
+        val periodDate = if (saved.period.length == 7) "${saved.period}-01" else saved.period
+        saveTransaction(
+            AyamTransaction(
+                id = "PAYROLL-${saved.id}",
+                date = periodDate,
+                ref = "PAY-${saved.period}-${saved.employeeId}",
+                type = "expense",
+                category = "Gaji",
+                description = "Upah ${saved.employeeName} periode ${saved.period}",
+                amount = saved.totalPay,
+                paidAmount = saved.paidAmount,
+                notes = "Rekap payroll ${saved.id}. ${saved.notes}",
+                status = if (saved.status == "DRAFT") "draft" else "confirmed",
+                source = "payroll",
+                paymentMethod = saved.paymentMethod,
+                cashAccount = saved.cashAccount
+            )
+        )
     }
 
     suspend fun toggleConfirm(id: String, currentStatus: String) {
