@@ -80,7 +80,7 @@ class GoogleSheetsSyncClient {
             .build()
         http.newCall(request).execute().use { response ->
             val content = response.body?.string().orEmpty()
-            if (!response.isSuccessful) throw IOException("Server Google menolak permintaan (HTTP \${response.code}).")
+            if (!response.isSuccessful) throw IOException("Server Google menolak permintaan (HTTP ${response.code}).")
             val json = try {
                 JSONObject(content)
             } catch (e: Exception) {
