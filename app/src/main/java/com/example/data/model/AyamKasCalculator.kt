@@ -43,7 +43,7 @@ object AyamKasCalculator {
             val remaining = kg - sold
             stockKg += remaining
             val unitCost = if (kg > 0) cost / kg else 0.0
-            stockValue += remaining * unitCost
+            stockValue += remaining.coerceAtLeast(0.0) * unitCost
             if (remaining < -0.0001) {
                 negativeStockBatches.add(p.ref.ifBlank { "Tanpa ref" })
             }
