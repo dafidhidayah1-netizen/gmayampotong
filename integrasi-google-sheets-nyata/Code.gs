@@ -47,8 +47,9 @@ function configureApiToken() {
 function doPost(e) {
   try {
     const request = JSON.parse((e && e.postData && e.postData.contents) || '{}');
-    assertApiToken_(request.token);
-    const result = dispatch_(String(request.action || ''), request.payload || {});
+    assertApiToken_(request.token || request.apiKey);
+    const payload = request.payload || request.data || request;
+    const result = dispatch_(String(request.action || ''), payload);
     return jsonOutput_(Object.assign({ok:true}, result || {}));
   } catch (err) {
     return jsonOutput_({ok:false,error:String(err && err.message ? err.message : err)});
@@ -172,7 +173,7 @@ function normalizeTransaction_(input) {
   const type = String(o.type !== undefined ? o.type : o.jenis || '').trim().toLowerCase();
   const amountValue = o.amount !== undefined ? o.amount : o.nominal;
   const paidRaw = o.paidAmount !== undefined ? o.paidAmount : o.dibayar;
-  const qtyRaw = o.qtyKg !== undefined ? o.qtyKg : o.qtyKg;
+  const qtyRaw = o.qtyKg !== undefined ? o.qtyKg : o.quantityKg;
   const saleableRaw = o.saleableKg !== undefined ? o.saleableKg : o.kgSiapJual;
   const amount = Number(amountValue);
   const paidAmount = paidRaw === '' || paidRaw === null || paidRaw === undefined ? null : Number(paidRaw);
@@ -338,14 +339,20 @@ function saveRecord_(sheetName, input, idField) {
 function syncTransactions_(payload) {
   setup_();
   const incoming = Array.isArray(payload.transactions) ? payload.transactions : [];
-  const deletedIds = Array.isArray(payload.deletedIds) ? payload.deletedIds.map(String) : [];
+  const incomingDeleted = Array.isArray(payload.deletedTransactions) ? payload.deletedTransactions : [];
+  const deletedIds = Array.from(new Set(
+    (Array.isArray(payload.deletedIds) ? payload.deletedIds.map(String) : [])
+      .concat(incomingDeleted.map(x => String((x && (x.originalId || x.id)) || '')).filter(Boolean))
+  ));
   const conflicts = [];
   const errors = [];
+  let accepted = 0;
   incoming.forEach(raw => {
     try {
       const model = normalizeTransaction_(raw);
       const result = upsertModel_(model);
       if (result.conflict) conflicts.push(model.id);
+      else if (result.written) accepted++;
     } catch (err) {
       errors.push({id:String(raw && raw.id || ''),error:String(err.message || err)});
     }
@@ -373,15 +380,24 @@ function syncTransactions_(payload) {
     }
   }
   recalculate_();
+  const all = readTransactionModels_(true);
+  const active = all.filter(row => row.deleted !== true);
+  const deleted = all.filter(row => row.deleted === true).map(row => Object.assign({},row,{
+    originalId:row.id,
+    deletedAt:row.updatedAt
+  }));
   return {
     app:APP_NAME,
     spreadsheetId:SpreadsheetApp.getActiveSpreadsheet().getId(),
     serverTime:new Date().toISOString(),
-    transactions:readTransactionModels_(true),
+    accepted:accepted,
+    transactions:active,
+    deletedTransactions:deleted,
     conflicts:conflicts,
     rejected:errors
   };
 }
+
 function readTransactionModels_(includeDeleted) {
   return list_('Transaksi', !!includeDeleted).map(row => {
     const model = sheetToModel_(row);
@@ -408,11 +424,11 @@ function recalculate_() {
   for (let row=2; row<=lastRow; row++) {
     const amountCell = amount+row, typeCell = type+row, qtyCell=qty+row, outputCell=output+row;
     const batchCell=batch+row, refCell=ref+row, statusCell=status+row, deletedCell=deleted+row;
-    const unitFormula = '=IF(AND('+typeCell+'="purchase",'+statusCell+'="confirmed",'+deletedCell+'<>TRUE),IFERROR(('+amountCell+'+SUMIFS($'+amount+'$2:$'+amount+',$'+type+'$2:$'+type+',"expense",$'+batch+'$2:$'+batch+','+refCell+',$'+status+'$2:$'+status+',"confirmed",$'+deleted+'$2:$'+deleted+',FALSE))/IF('+outputCell+'>0,'+outputCell+','+qtyCell+'),0),"")';
-    const saleFormula = '=IF(AND('+typeCell+'="sale",'+statusCell+'="confirmed",'+deletedCell+'<>TRUE),IF(OR('+batchCell+'="",COUNTIFS($'+type+'$2:$'+type+',"purchase",$'+ref+'$2:$'+ref+','+batchCell+',$'+status+'$2:$'+status+',"confirmed",$'+deleted+'$2:$'+deleted+',FALSE)<>1),0,IFERROR('+qtyCell+'*INDEX($'+hppUnit+'$2:$'+hppUnit+',MATCH('+batchCell+',$'+ref+'$2:$'+ref+',0)),0)),"")';
+    const unitFormula = '=IF(AND('+typeCell+'="purchase",'+statusCell+'="confirmed",'+deletedCell+'<>TRUE),IFERROR(('+amountCell+'+SUMIFS($'+amount+'$2:$'+amount+',$'+type+'$2:$'+type+',"expense",$'+batch+'$2:$'+batch+','+refCell+',$'+status+'$2:$'+status+',"confirmed",$'+deleted+'$2:$'+deleted+',"<>TRUE"))/IF('+outputCell+'>0,'+outputCell+','+qtyCell+'),0),"")';
+    const saleFormula = '=IF(AND('+typeCell+'="sale",'+statusCell+'="confirmed",'+deletedCell+'<>TRUE),IF(OR('+batchCell+'="",COUNTIFS($'+type+'$2:$'+type+',"purchase",$'+ref+'$2:$'+ref+','+batchCell+',$'+status+'$2:$'+status+',"confirmed",$'+deleted+'$2:$'+deleted+',"<>TRUE")<>1),0,IFERROR('+qtyCell+'*INDEX($'+hppUnit+'$2:$'+hppUnit+',MATCH('+batchCell+',$'+ref+'$2:$'+ref+',0)),0)),"")';
     const grossFormula = '=IF(AND('+typeCell+'="sale",'+statusCell+'="confirmed",'+deletedCell+'<>TRUE),IF('+hppSale+row+'>0,'+amountCell+'-'+hppSale+row+',""),"")';
-    const stockFormula = '=IF(AND('+typeCell+'="purchase",'+statusCell+'="confirmed",'+deletedCell+'<>TRUE),IF('+outputCell+'>0,'+outputCell+','+qtyCell+')-SUMIFS($'+qty+'$2:$'+qty+',$'+type+'$2:$'+type+',"sale",$'+batch+'$2:$'+batch+','+refCell+',$'+status+'$2:$'+status+',"confirmed",$'+deleted+'$2:$'+deleted+',FALSE),"")';
-    const statusFormula = '=IF('+deletedCell+'=TRUE,"DIARSIPKAN",IF('+statusCell+'<>"confirmed","DRAF",IF('+typeCell+'="purchase",IF('+hppUnit+row+'<=0,"HPP BELUM LENGKAP",IF('+stock+row+'<0,"STOK MINUS","OK")),IF('+typeCell+'="sale",IF(OR('+qtyCell+'<=0,'+batchCell+'="",'+hppSale+row+'<=0),"HPP BELUM LENGKAP","OK"),IF(AND('+typeCell+'="expense",'+batchCell+'<>"",COUNTIFS($'+type+'$2:$'+type+',"purchase",$'+ref+'$2:$'+ref+','+batchCell+',$'+status+'$2:$'+status+',"confirmed",$'+deleted+'$2:$'+deleted+',FALSE)<>1),"BIAYA BATCH TANPA DO","OK")))))';
+    const stockFormula = '=IF(AND('+typeCell+'="purchase",'+statusCell+'="confirmed",'+deletedCell+'<>TRUE),IF('+outputCell+'>0,'+outputCell+','+qtyCell+')-SUMIFS($'+qty+'$2:$'+qty+',$'+type+'$2:$'+type+',"sale",$'+batch+'$2:$'+batch+','+refCell+',$'+status+'$2:$'+status+',"confirmed",$'+deleted+'$2:$'+deleted+',"<>TRUE"),"")';
+    const statusFormula = '=IF('+deletedCell+'=TRUE,"DIARSIPKAN",IF('+statusCell+'<>"confirmed","DRAF",IF('+typeCell+'="purchase",IF('+hppUnit+row+'<=0,"HPP BELUM LENGKAP",IF('+stock+row+'<0,"STOK MINUS","OK")),IF('+typeCell+'="sale",IF(OR('+qtyCell+'<=0,'+batchCell+'="",'+hppSale+row+'<=0),"HPP BELUM LENGKAP","OK"),IF(AND('+typeCell+'="expense",'+batchCell+'<>"",COUNTIFS($'+type+'$2:$'+type+',"purchase",$'+ref+'$2:$'+ref+','+batchCell+',$'+status+'$2:$'+status+',"confirmed",$'+deleted+'$2:$'+deleted+',"<>TRUE")<>1),"BIAYA BATCH TANPA DO","OK")))))';
     sh.getRange(row,idx.hppPerKg).setFormula(unitFormula);
     sh.getRange(row,idx.hppJual).setFormula(saleFormula);
     sh.getRange(row,idx.labaKotor).setFormula(grossFormula);
