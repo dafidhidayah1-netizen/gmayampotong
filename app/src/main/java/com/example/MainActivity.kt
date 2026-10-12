@@ -98,6 +98,12 @@ fun AyamKasApp(viewModel: AyamKasViewModel) {
     var currentTab by remember { mutableStateOf(AyamNavTab.DASHBOARD) }
 
     val allTransactions by viewModel.allTransactions.collectAsState()
+    val cloudUrl by viewModel.cloudUrl.collectAsState()
+    val cloudApiKey by viewModel.cloudApiKey.collectAsState()
+    val autoSync by viewModel.autoSyncEnabled.collectAsState()
+    val isCloudSyncing by viewModel.isCloudSyncing.collectAsState()
+    val cloudStatus by viewModel.cloudStatus.collectAsState()
+    val lastCloudSyncAt by viewModel.lastCloudSyncAt.collectAsState()
     val summary by viewModel.dashboardSummary.collectAsState()
     val stockRows by viewModel.stockRows.collectAsState()
     val filteredTransactions by viewModel.filteredTransactions.collectAsState()
@@ -304,7 +310,18 @@ fun AyamKasApp(viewModel: AyamKasViewModel) {
                     onImportJson = { viewModel.importJson(it) },
                     onResetData = { viewModel.resetAllData() },
                     onRestoreDefaultDrafts = { viewModel.restoreDefaultData() },
-                    onShareWhatsApp = { viewModel.shareSummaryViaWhatsApp(context) }
+                    onShareWhatsApp = { viewModel.shareSummaryViaWhatsApp(context) },
+                    cloudUrl = cloudUrl,
+                    cloudApiKey = cloudApiKey,
+                    autoSync = autoSync,
+                    isCloudSyncing = isCloudSyncing,
+                    cloudStatus = cloudStatus,
+                    lastCloudSyncAt = lastCloudSyncAt,
+                    localTransactionCount = allTransactions.size,
+                    draftTransactionCount = allTransactions.count { it.isDraft },
+                    onSaveCloudSettings = { url, key, enabled -> viewModel.saveCloudSettings(url, key, enabled) },
+                    onSyncNow = { url, key, enabled -> viewModel.syncNow(url, key, enabled) },
+                    onBackupToDrive = { url, key -> viewModel.backupSpreadsheetToDrive(url, key) }
                 )
             }
         }

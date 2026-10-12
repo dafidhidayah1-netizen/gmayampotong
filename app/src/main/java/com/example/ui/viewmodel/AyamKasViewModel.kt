@@ -17,6 +17,9 @@ import com.example.data.model.DeletedAyamTransaction
 import com.example.data.model.DoStockItem
 import com.example.data.model.TypeBreakdownItem
 import com.example.data.repository.AyamKasRepository
+import com.example.data.remote.GoogleSheetsSyncClient
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -33,6 +36,15 @@ import java.util.Locale
 
 class AyamKasViewModel(application: Application) : AndroidViewModel(application) {
 
+    private val cloudPrefs = application.getSharedPreferences("ayamkaspro_cloud", Context.MODE_PRIVATE)
+    private val cloudClient = GoogleSheetsSyncClient()
+    val cloudUrl = MutableStateFlow(cloudPrefs.getString("url", "").orEmpty())
+    val cloudApiKey = MutableStateFlow(cloudPrefs.getString("apiKey", "").orEmpty())
+    val autoSyncEnabled = MutableStateFlow(cloudPrefs.getBoolean("autoSync", false))
+    val isCloudSyncing = MutableStateFlow(false)
+    val cloudStatus = MutableStateFlow("Belum disambungkan")
+    val lastCloudSyncAt = MutableStateFlow(cloudPrefs.getString("lastSyncAt", "").orEmpty())
+    private var pendingAutoSync: Job? = null
     private val repository: AyamKasRepository
     val allTransactions: StateFlow<List<AyamTransaction>>
     val allDeleted: StateFlow<List<DeletedAyamTransaction>>
@@ -70,6 +82,10 @@ class AyamKasViewModel(application: Application) : AndroidViewModel(application)
 
         viewModelScope.launch {
             repository.ensureSeededInitialData()
+            if (autoSyncEnabled.value && cloudUrl.value.isNotBlank() && cloudApiKey.value.isNotBlank()) {
+                delay(900)
+                performCloudSync()
+            }
         }
     }
 
@@ -174,6 +190,95 @@ class AyamKasViewModel(application: Application) : AndroidViewModel(application)
         emptyList()
     )
 
+    fun saveCloudSettings(urlInput: String, apiKeyInput: String, autoSync: Boolean) {
+        if (!persistCloudSettings(urlInput, apiKeyInput, autoSync)) return
+        viewModelScope.launch { _userMessage.emit("Pengaturan cloud tersimpan") }
+    }
+
+    fun syncNow(urlInput: String, apiKeyInput: String, autoSync: Boolean) {
+        if (!persistCloudSettings(urlInput, apiKeyInput, autoSync)) return
+        if (isCloudSyncing.value) return
+        viewModelScope.launch { performCloudSync() }
+    }
+
+    fun backupSpreadsheetToDrive(urlInput: String, apiKeyInput: String) {
+        if (!persistCloudSettings(urlInput, apiKeyInput, autoSyncEnabled.value)) return
+        if (isCloudSyncing.value) return
+        viewModelScope.launch {
+            isCloudSyncing.value = true
+            cloudStatus.value = "Membuat cadangan spreadsheet di Google Drive…"
+            try {
+                val backup = cloudClient.backup(cloudUrl.value, cloudApiKey.value)
+                cloudStatus.value = "Cadangan spreadsheet berhasil: \${backup.name}"
+                _userMessage.emit("Cadangan tersimpan di Drive: \${backup.url}")
+            } catch (e: Exception) {
+                cloudStatus.value = "Cadangan gagal: \${e.message ?: "kesalahan koneksi"}"
+                _userMessage.emit(cloudStatus.value)
+            } finally {
+                isCloudSyncing.value = false
+            }
+        }
+    }
+
+    private fun persistCloudSettings(urlInput: String, apiKeyInput: String, autoSync: Boolean): Boolean {
+        val url = urlInput.trim()
+        val key = apiKeyInput.trim()
+        if (!url.startsWith("https://script.google.com/macros/s/") || !url.endsWith("/exec")) {
+            cloudStatus.value = "URL tidak valid. Gunakan URL Web App Apps Script yang berakhiran /exec."
+            viewModelScope.launch { _userMessage.emit(cloudStatus.value) }
+            return false
+        }
+        if (key.length < 32) {
+            cloudStatus.value = "Kunci sinkronisasi belum valid. Buat kunci dari menu AyamKas Pro di Google Sheets."
+            viewModelScope.launch { _userMessage.emit(cloudStatus.value) }
+            return false
+        }
+        cloudPrefs.edit()
+            .putString("url", url)
+            .putString("apiKey", key)
+            .putBoolean("autoSync", autoSync)
+            .apply()
+        cloudUrl.value = url
+        cloudApiKey.value = key
+        autoSyncEnabled.value = autoSync
+        cloudStatus.value = "Pengaturan tersimpan. Data lokal belum berubah."
+        return true
+    }
+
+    private suspend fun performCloudSync() {
+        if (isCloudSyncing.value) return
+        val url = cloudUrl.value
+        val key = cloudApiKey.value
+        if (url.isBlank() || key.isBlank()) {
+            cloudStatus.value = "Masukkan URL Web App dan kunci sinkronisasi terlebih dahulu."
+            return
+        }
+        isCloudSyncing.value = true
+        cloudStatus.value = "Sinkronisasi berlangsung…"
+        try {
+            val result = repository.syncWithGoogleSheets(cloudClient, url, key)
+            val stamp = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale("id", "ID")).format(Date())
+            lastCloudSyncAt.value = stamp
+            cloudPrefs.edit().putString("lastSyncAt", stamp).apply()
+            cloudStatus.value = "Berhasil · data server \${result.totalOnServer} transaksi · ditarik \${result.pulled} · diproses server \${result.serverAccepted}"
+            _userMessage.emit("Sinkronisasi selesai. Periksa Ringkasan dan Validasi di Google Sheets.")
+        } catch (e: Exception) {
+            cloudStatus.value = "Sinkronisasi gagal: \${e.message ?: "jaringan atau izin server"}"
+            _userMessage.emit(cloudStatus.value)
+        } finally {
+            isCloudSyncing.value = false
+        }
+    }
+
+    private fun scheduleAutoSync() {
+        if (!autoSyncEnabled.value || cloudUrl.value.isBlank() || cloudApiKey.value.isBlank()) return
+        pendingAutoSync?.cancel()
+        pendingAutoSync = viewModelScope.launch {
+            delay(1200)
+            performCloudSync()
+        }
+    }
+
     fun openForm(tx: AyamTransaction? = null, kind: String? = null) {
         editingTransaction.value = tx
         presetType.value = kind
@@ -219,6 +324,7 @@ class AyamKasViewModel(application: Application) : AndroidViewModel(application)
                 source = existing?.source ?: "manual"
             )
             repository.saveTransaction(tx)
+            scheduleAutoSync()
             closeForm()
             _userMessage.emit(if (existing != null) "Transaksi diperbarui" else "Transaksi disimpan")
         }
@@ -228,6 +334,7 @@ class AyamKasViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch {
             if (tx.isConfirmed) {
                 repository.toggleConfirm(tx.id, tx.status)
+                scheduleAutoSync()
                 _userMessage.emit("Transaksi kembali menjadi Draf")
             } else {
                 if (tx.paidAmount == null) {
@@ -236,6 +343,7 @@ class AyamKasViewModel(application: Application) : AndroidViewModel(application)
                     return@launch
                 }
                 repository.toggleConfirm(tx.id, tx.status)
+                scheduleAutoSync()
                 _userMessage.emit("Transaksi terverifikasi dan masuk ke laporan")
             }
         }
@@ -249,6 +357,7 @@ class AyamKasViewModel(application: Application) : AndroidViewModel(application)
                 val updated = if (t.paidAmount == null) t.copy(paidAmount = t.amount, status = "confirmed") else t.copy(status = "confirmed")
                 repository.saveTransaction(updated)
             }
+            scheduleAutoSync()
             _userMessage.emit("${drafts.size} catatan berhasil diverifikasi")
         }
     }
@@ -256,6 +365,7 @@ class AyamKasViewModel(application: Application) : AndroidViewModel(application)
     fun deleteTransaction(tx: AyamTransaction) {
         viewModelScope.launch {
             repository.deleteTransaction(tx)
+            scheduleAutoSync()
             _userMessage.emit("Transaksi “${tx.description}” dihapus")
         }
     }
@@ -263,6 +373,7 @@ class AyamKasViewModel(application: Application) : AndroidViewModel(application)
     fun restoreDeleted(deleted: DeletedAyamTransaction) {
         viewModelScope.launch {
             repository.restoreDeleted(deleted)
+            scheduleAutoSync()
             _userMessage.emit("Transaksi berhasil dipulihkan")
         }
     }
@@ -270,6 +381,7 @@ class AyamKasViewModel(application: Application) : AndroidViewModel(application)
     fun resetAllData() {
         viewModelScope.launch {
             repository.clearAll()
+            scheduleAutoSync()
             _userMessage.emit("Semua transaksi lokal telah dihapus")
         }
     }
@@ -277,6 +389,7 @@ class AyamKasViewModel(application: Application) : AndroidViewModel(application)
     fun restoreDefaultData() {
         viewModelScope.launch {
             repository.restoreDefaultData()
+            scheduleAutoSync()
             _userMessage.emit("Data operasional riil berhasil dimuat ulang")
         }
     }
