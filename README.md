@@ -4,7 +4,7 @@ Android native (Kotlin + Jetpack Compose) dengan Room sebagai penyimpanan lokal.
 
 ## Prinsip data nyata
 
-- Instalasi baru **tidak memuat transaksi historis secara otomatis**. Data hanya muncul melalui input pengguna atau pemulihan cadangan. Catatan historis awal yang tersedia sebagai opsi pemulihan berstatus draf dan tetap perlu diverifikasi.
+- Instalasi baru **benar-benar kosong**. Tidak ada transaksi usaha yang dibundel, di-seed, atau dimuat ulang oleh tombol default. Data hanya masuk melalui input pengguna, impor/restore JSON, atau sinkronisasi spreadsheet yang dipilih pemilik.
 - Form input, validasi, kalkulasi, arsip, dan ekspor/pulihkan menggunakan database Room. Data yang belum lengkap tidak boleh dianggap laba final.
 - Saldo kas, omzet, HPP, stok, piutang, utang, transfer, dan pinjaman dicatat terpisah. Nominal faktur bukan otomatis jumlah kas yang diterima/dibayar.
 - Logo/nama perusahaan dan mode tema System/Light/Dark disimpan di pengaturan perangkat.
