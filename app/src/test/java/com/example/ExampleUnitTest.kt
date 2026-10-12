@@ -22,20 +22,17 @@ class ExampleUnitTest {
     fun testRealOperationalDataAndCalculator() {
         val realData = InitialAyamData.REAL_TRANSACTIONS
         assertEquals(33, realData.size)
-        assertTrue(realData.all { it.isConfirmed })
+        // Historical rows are loaded as drafts until their actual source documents,
+        // weights, payment amounts, and DO links have been checked by the owner.
+        assertTrue(realData.all { it.isDraft })
 
         val summary = AyamKasCalculator.calculate(realData)
-        assertEquals(33, summary.confirmedCount)
-        assertEquals(0, summary.draftCount)
-        assertTrue(summary.cash > 0.0)
-        assertTrue(summary.revenue > 0.0)
-        assertTrue(summary.expenses > 0.0)
-        assertTrue(summary.cogs > 0.0)
-        assertTrue(summary.profit > 0.0)
-        assertTrue(summary.stockKg > 0.0)
-        assertTrue(summary.stockValue > 0.0)
-        // Utang DO from DO F-001 (5.484.000 - 3.000.000 = 2.484.000)
-        assertEquals(2484000.0, summary.ap, 0.001)
+        assertEquals(0, summary.confirmedCount)
+        assertEquals(33, summary.draftCount)
+        assertEquals(0.0, summary.cash, 0.001)
+        assertEquals(0.0, summary.revenue, 0.001)
+        assertEquals(0.0, summary.cogs, 0.001)
+        assertEquals(0.0, summary.profit, 0.001)
     }
 
     @Test
