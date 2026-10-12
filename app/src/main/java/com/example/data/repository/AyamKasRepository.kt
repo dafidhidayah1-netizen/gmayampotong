@@ -52,6 +52,8 @@ class AyamKasRepository(
     }
 
     suspend fun saveTransaction(tx: AyamTransaction) {
+        // Enforce rules in the repository too, so UI paths cannot bypass validation.
+        if (tx.isConfirmed) validateForConfirmation(tx)
         val saved = tx.copy(updatedAt = nowIso())
         dao.insertTransaction(saved)
         updateCashMirror(saved)
@@ -480,7 +482,16 @@ class AyamKasRepository(
                     batchRef = tx.batchRef,
                     notes = tx.notes,
                     status = tx.status,
-                    source = tx.source
+                    source = tx.source,
+                    paymentMethod = tx.paymentMethod,
+                    cashAccount = tx.cashAccount,
+                    supplier = tx.supplier,
+                    weightLossKg = tx.weightLossKg,
+                    mortalityRatePct = tx.mortalityRatePct,
+                    fcr = tx.fcr,
+                    weightGainKg = tx.weightGainKg,
+                    feedPricePerKg = tx.feedPricePerKg,
+                    processingCost = tx.processingCost
                 )
             )
         }
@@ -510,7 +521,16 @@ class AyamKasRepository(
                     batchRef = tx.batchRef,
                     notes = tx.notes,
                     status = tx.status,
-                    source = tx.source
+                    source = tx.source,
+                    paymentMethod = tx.paymentMethod,
+                    cashAccount = tx.cashAccount,
+                    supplier = tx.supplier,
+                    weightLossKg = tx.weightLossKg,
+                    mortalityRatePct = tx.mortalityRatePct,
+                    fcr = tx.fcr,
+                    weightGainKg = tx.weightGainKg,
+                    feedPricePerKg = tx.feedPricePerKg,
+                    processingCost = tx.processingCost
                 )
             )
         }
