@@ -54,7 +54,10 @@ class AyamKasViewModel(application: Application) : AndroidViewModel(application)
     val cloudStatus = MutableStateFlow("Belum disambungkan")
     val lastCloudSyncAt = MutableStateFlow(cloudPrefs.getString("lastSyncAt", "").orEmpty())
     private var pendingAutoSync: Job? = null
-    private val repository: AyamKasRepository
+    private val repository: AyamKasRepository by lazy {
+        val db = KasDatabase.getDatabase(application)
+        AyamKasRepository(db.ayamKasDao(), db.businessLedgerDao())
+    }
     val allTransactions: StateFlow<List<AyamTransaction>>
     val allDeleted: StateFlow<List<DeletedAyamTransaction>>
     val cashTransactions = repository.cashTransactions
@@ -98,9 +101,6 @@ class AyamKasViewModel(application: Application) : AndroidViewModel(application)
     val userMessage = _userMessage.asSharedFlow()
 
     init {
-        val db = KasDatabase.getDatabase(application)
-        repository = AyamKasRepository(db.ayamKasDao(), db.businessLedgerDao())
-
         allTransactions = repository.allTransactions.stateIn(
             viewModelScope,
             SharingStarted.Eagerly,
