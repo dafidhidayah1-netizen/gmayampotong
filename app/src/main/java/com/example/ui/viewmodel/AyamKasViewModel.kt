@@ -229,7 +229,7 @@ class AyamKasViewModel(application: Application) : AndroidViewModel(application)
             return false
         }
         if (key.length < 32) {
-            cloudStatus.value = "Kunci sinkronisasi belum valid. Buat kunci dari menu AyamKas Pro di Google Sheets."
+            cloudStatus.value = "Kunci belum valid. Jalankan configureApiToken() di editor Apps Script dan salin AYAMKAS_API_TOKEN dari log eksekusi."
             viewModelScope.launch { _userMessage.emit(cloudStatus.value) }
             return false
         }
