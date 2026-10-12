@@ -143,6 +143,7 @@ data class AyamKasSummary(
     val salesCash: Double = 0.0,
     val salesTransfer: Double = 0.0,
     val salesQris: Double = 0.0,
+    val salesUnclassified: Double = 0.0,
     val grossProfit: Double = 0.0,
     val grossMarginPercent: Double = 0.0,
     val batchDataIncomplete: Int = 0,
