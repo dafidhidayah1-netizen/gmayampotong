@@ -178,6 +178,36 @@ function upsertCashMirrorFromTransaction_(txSheet,rowNumber,stamp) {
   writeRecord_(cashSheet,Object.keys(cashCols).sort(function(a,b){return cashCols[a]-cashCols[b];}),cashRecord,exists?found+2:0);
 }
 
+function upsertLoanCashMirrorFromSheet_(loanSheet,rowNumber,stamp) {
+  const cols=columnMap_(loanSheet);
+  const get=function(header){return loanSheet.getRange(rowNumber,cols[header]).getValue();};
+  const id=String(get('id')||'').trim();
+  if(!id) return;
+  const direction=String(get('direction')||'');
+  const amount=Math.max(0,number_(get('amount')));
+  const incoming=direction==='RECEIVED'||direction==='COLLECTION';
+  const validDirection=incoming||direction==='REPAYMENT'||direction==='GIVEN';
+  const status=String(get('status')||'').toLowerCase();
+  const confirmed=status==='confirmed'&&amount>0&&validDirection;
+  const cashSheet=SpreadsheetApp.getActiveSpreadsheet().getSheetByName('KasTransaksi');
+  const cashCols=columnMap_(cashSheet);
+  const cashId='CASH-LOAN-'+id;
+  const existingIds=cashSheet.getLastRow()>1?cashSheet.getRange(2,cashCols.id,cashSheet.getLastRow()-1,1).getDisplayValues().flat():[];
+  const found=existingIds.indexOf(cashId);
+  const record={
+    id:cashId,sourceTransactionId:'LOAN-'+id,date:String(get('date')||''),
+    accountName:String(get('cashAccount')||'BELUM_DIPETAKAN'),
+    direction:incoming?'IN':'OUT',amount:amount,paymentMethod:'UNVERIFIED',
+    category:String(get('loanType')||'PINJAMAN'),
+    description:String(get('direction')||'')+' · '+String(get('party')||''),
+    notes:String(get('notes')||'')+(String(get('loanReference')||'').trim()?' · Ref '+String(get('loanReference')).trim():''),
+    status:confirmed?'confirmed':'draft',
+    updatedAt:stamp||String(get('updatedAt')||new Date().toISOString()),
+    deleted:!confirmed
+  };
+  writeRecord_(cashSheet,Object.keys(cashCols).sort(function(a,b){return cashCols[a]-cashCols[b];}),record,found>=0?found+2:0);
+}
+
 function validateLoanRecordFromSheet_(sh,rowNumber) {
   const cols=columnMap_(sh);
   const get=function(header){return sh.getRange(rowNumber,cols[header]).getValue();};
@@ -322,6 +352,7 @@ function handleAuxSheetEdit_(sh,e) {
           appendLog_('VALIDATION_BLOCKED',String(sh.getRange(row,cols.id).getValue()),'Sheets',error);
         }
       }
+      if(sh.getName()==='PinjamanLuar') upsertLoanCashMirrorFromSheet_(sh,row,now);
       if(sh.getName()==='Payroll' && String(sh.getRange(row,cols.status).getValue()).toUpperCase()!=='DRAFT') {
         const error=validatePayrollRecordFromSheet_(sh,row);
         if(error) {
