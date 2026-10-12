@@ -194,7 +194,7 @@ fun DashboardScreen(
                     MetricCard(
                         title = "Laba Bersih Operasional",
                         value = AyamKasFormatters.formatRupiah(summary.profit),
-                        footnote = "Omzet − HPP DO − Biaya",
+                        footnote = if (summary.profitComplete) "Omzet − HPP batch − biaya" else "SEMENTARA · data batch belum lengkap",
                         icon = if (summary.profit >= 0) "◈" else "⚠",
                         style = if (summary.profit < 0) MetricStyle.DANGER else MetricStyle.NORMAL,
                         modifier = Modifier.weight(1f)
@@ -206,9 +206,9 @@ fun DashboardScreen(
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     MetricCard(
-                        title = "Stok Tercatat",
+                        title = "Sisa Stok",
                         value = "${AyamKasFormatters.formatNumber(summary.stockKg)} kg",
-                        footnote = "Berdasarkan DO & penjualan",
+                        footnote = "DO − susut − kematian − kg terjual",
                         icon = "📦",
                         style = MetricStyle.INFO,
                         modifier = Modifier.weight(1f)
@@ -216,7 +216,7 @@ fun DashboardScreen(
                     MetricCard(
                         title = "Nilai Persediaan DO",
                         value = AyamKasFormatters.formatRupiah(summary.stockValue),
-                        footnote = "Harga pokok per kg DO",
+                        footnote = "HPP per kg setelah susut",
                         icon = "▤",
                         style = MetricStyle.NORMAL,
                         modifier = Modifier.weight(1f)
@@ -243,6 +243,51 @@ fun DashboardScreen(
                         style = MetricStyle.INFO,
                         modifier = Modifier.weight(1f)
                     )
+                }
+            }
+        }
+
+        item {
+            Card(
+                modifier = Modifier.fillMaxWidth().testTag("dashboard_gross_margin_and_payment_breakdown"),
+                shape = RoundedCornerShape(14.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+            ) {
+                Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("Margin Kotor & Pembayaran Penjualan", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Laba kotor", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(AyamKasFormatters.formatRupiah(summary.grossProfit), fontWeight = FontWeight.Bold)
+                        }
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Margin kotor", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("${AyamKasFormatters.formatNumber(summary.grossMarginPercent)}%", fontWeight = FontWeight.Bold)
+                        }
+                    }
+                    Text("Penerimaan dari penjualan yang sudah tercatat berdasarkan metode pembayaran:", style = MaterialTheme.typography.bodySmall)
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("TUNAI", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(AyamKasFormatters.formatRupiah(summary.salesCash), style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)
+                        }
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("TRANSFER", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(AyamKasFormatters.formatRupiah(summary.salesTransfer), style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)
+                        }
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("QRIS", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(AyamKasFormatters.formatRupiah(summary.salesQris), style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)
+                        }
+                    }
+                    if (!summary.profitComplete) {
+                        Text(
+                            "Laba masih sementara: periksa penyusutan/kematian, HPP batch, tautan DO, dan stok pada layar DO & Stok.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.testTag("warning_profit_incomplete")
+                        )
+                    }
                 }
             }
         }
