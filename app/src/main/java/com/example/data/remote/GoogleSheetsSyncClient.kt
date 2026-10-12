@@ -108,6 +108,15 @@ class GoogleSheetsSyncClient {
         put("status", status)
         put("source", source)
         put("updatedAt", updatedAt)
+        put("paymentMethod", paymentMethod)
+        put("cashAccount", cashAccount)
+        put("supplier", supplier)
+        putNullable("weightLossKg", weightLossKg)
+        putNullable("mortalityRatePct", mortalityRatePct)
+        putNullable("fcr", fcr)
+        putNullable("weightGainKg", weightGainKg)
+        putNullable("feedPricePerKg", feedPricePerKg)
+        put("processingCost", processingCost)
     }
 
     private fun DeletedAyamTransaction.toJson() = JSONObject().apply {
@@ -127,6 +136,15 @@ class GoogleSheetsSyncClient {
         put("source", source)
         put("updatedAt", deletedAt)
         put("deletedAt", deletedAt)
+        put("paymentMethod", paymentMethod)
+        put("cashAccount", cashAccount)
+        put("supplier", supplier)
+        putNullable("weightLossKg", weightLossKg)
+        putNullable("mortalityRatePct", mortalityRatePct)
+        putNullable("fcr", fcr)
+        putNullable("weightGainKg", weightGainKg)
+        putNullable("feedPricePerKg", feedPricePerKg)
+        put("processingCost", processingCost)
     }
 
     private fun JSONObject.putNullable(key: String, value: Double?) {
@@ -152,7 +170,16 @@ class GoogleSheetsSyncClient {
                     notes = o.optString("notes"),
                     status = o.optString("status", "draft"),
                     source = o.optString("source", "cloud"),
-                    updatedAt = o.optString("updatedAt")
+                    updatedAt = o.optString("updatedAt"),
+                    paymentMethod = o.optString("paymentMethod", "CASH"),
+                    cashAccount = o.optString("cashAccount", "DOMPET"),
+                    supplier = o.optString("supplier", ""),
+                    weightLossKg = o.nullableDouble("weightLossKg"),
+                    mortalityRatePct = o.nullableDouble("mortalityRatePct"),
+                    fcr = o.nullableDouble("fcr"),
+                    weightGainKg = o.nullableDouble("weightGainKg"),
+                    feedPricePerKg = o.nullableDouble("feedPricePerKg"),
+                    processingCost = o.optDouble("processingCost", 0.0)
                 ))
             }
         }
@@ -181,7 +208,16 @@ class GoogleSheetsSyncClient {
                     batchRef = o.optString("batchRef"),
                     notes = o.optString("notes"),
                     status = o.optString("status", "draft"),
-                    source = o.optString("source", "cloud")
+                    source = o.optString("source", "cloud"),
+                    paymentMethod = o.optString("paymentMethod", "CASH"),
+                    cashAccount = o.optString("cashAccount", "DOMPET"),
+                    supplier = o.optString("supplier", ""),
+                    weightLossKg = o.nullableDouble("weightLossKg"),
+                    mortalityRatePct = o.nullableDouble("mortalityRatePct"),
+                    fcr = o.nullableDouble("fcr"),
+                    weightGainKg = o.nullableDouble("weightGainKg"),
+                    feedPricePerKg = o.nullableDouble("feedPricePerKg"),
+                    processingCost = o.optDouble("processingCost", 0.0)
                 ))
             }
         }
