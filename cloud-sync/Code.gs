@@ -652,8 +652,10 @@ function columnLetter_(column) {
 function rowToObject_(headers,row) {
   const o = {};
   headers.forEach(function(h,i) {
-    if (row[i] instanceof Date && h === 'date') {
+    if (row[i] instanceof Date && ['date','workDate','dueDate'].indexOf(h)>=0) {
       o[h] = Utilities.formatDate(row[i], Session.getScriptTimeZone(), 'yyyy-MM-dd');
+    } else if (row[i] instanceof Date && h === 'period') {
+      o[h] = Utilities.formatDate(row[i], Session.getScriptTimeZone(), 'yyyy-MM');
     } else {
       o[h] = row[i] instanceof Date ? row[i].toISOString() : row[i];
     }
