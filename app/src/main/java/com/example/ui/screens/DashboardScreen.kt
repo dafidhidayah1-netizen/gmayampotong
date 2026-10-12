@@ -280,6 +280,12 @@ fun DashboardScreen(
                             Text(AyamKasFormatters.formatRupiah(summary.salesQris), style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)
                         }
                     }
+                    if (summary.salesUnclassified > 0.0) {
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text("BELUM DIPETAKAN", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
+                            Text(AyamKasFormatters.formatRupiah(summary.salesUnclassified), style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.error)
+                        }
+                    }
                     if (!summary.profitComplete) {
                         Text(
                             "Laba masih sementara: periksa penyusutan/kematian, HPP batch, tautan DO, dan stok pada layar DO & Stok.",
