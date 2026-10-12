@@ -14,7 +14,6 @@ import com.example.data.model.AyamKasFormatters
 import com.example.data.model.AyamKasCalculator
 import com.example.data.model.BusinessLedgerCalculator
 import com.example.data.model.DeletedAyamTransaction
-import com.example.data.model.InitialAyamData
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import com.example.data.remote.GoogleSheetsSyncClient
@@ -44,13 +43,6 @@ class AyamKasRepository(
     val employees: Flow<List<EmployeeRecord>> = businessDao.observeEmployees()
     val attendance: Flow<List<AttendanceRecord>> = businessDao.observeAttendance()
     val payroll: Flow<List<PayrollRecord>> = businessDao.observePayroll()
-
-    suspend fun ensureSeededInitialData() {
-        val count = dao.getTransactionCount()
-        if (count == 0) {
-            dao.insertAll(InitialAyamData.REAL_TRANSACTIONS)
-        }
-    }
 
     suspend fun saveTransaction(tx: AyamTransaction) {
         // Enforce rules in the repository too, so UI paths cannot bypass validation.
@@ -498,46 +490,6 @@ class AyamKasRepository(
         }
         dao.clearAll()
         businessDao.clearMirroredCashTransactions()
-    }
-
-    suspend fun restoreDefaultData() {
-        val old = dao.getAllTransactions().first()
-        val defaults = InitialAyamData.REAL_TRANSACTIONS
-        val defaultIds = defaults.map { it.id }.toSet()
-        val now = nowIso()
-        old.filterNot { it.id in defaultIds }.forEach { tx ->
-            dao.insertDeleted(
-                DeletedAyamTransaction(
-                    id = "DEL-${tx.id}",
-                    originalId = tx.id,
-                    deletedAt = now,
-                    date = tx.date,
-                    ref = tx.ref,
-                    type = tx.type,
-                    category = tx.category,
-                    description = tx.description,
-                    amount = tx.amount,
-                    paidAmount = tx.paidAmount,
-                    qtyKg = tx.qtyKg,
-                    batchRef = tx.batchRef,
-                    notes = tx.notes,
-                    status = tx.status,
-                    source = tx.source,
-                    paymentMethod = tx.paymentMethod,
-                    cashAccount = tx.cashAccount,
-                    supplier = tx.supplier,
-                    weightLossKg = tx.weightLossKg,
-                    mortalityRatePct = tx.mortalityRatePct,
-                    fcr = tx.fcr,
-                    weightGainKg = tx.weightGainKg,
-                    feedPricePerKg = tx.feedPricePerKg,
-                    processingCost = tx.processingCost
-                )
-            )
-        }
-        dao.clearAll()
-        businessDao.clearMirroredCashTransactions()
-        dao.insertAll(defaults.map { it.copy(updatedAt = now) })
     }
 
     fun generateJsonExport(
