@@ -444,9 +444,17 @@ function recalculatePayrollForAttendance_(employeeId, period) {
   const payrolls = list_('AKP_Penggajian').filter(row =>
     String(row.karyawanId) === employeeId && String(row.periode) === period
   );
+  let changed = false;
   payrolls.forEach(row => {
+    if (String(row.statusBayar || '').toUpperCase() === 'DIBAYAR') {
+      audit_('ATTENDANCE_CHANGE_AFTER_PAY','AKP_Penggajian',String(row.id),
+        'Absensi berubah setelah payroll dibayar; rekap dan kas tidak diubah otomatis. Buat penyesuaian terpisah jika perlu.');
+      return;
+    }
     saveRecord_('AKP_Penggajian',row,'id');
+    changed = true;
   });
+  if (changed) recalculate_();
 }
 
 function syncTransactions_(payload) {
