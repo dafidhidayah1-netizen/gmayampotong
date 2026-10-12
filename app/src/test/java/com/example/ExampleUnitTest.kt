@@ -110,6 +110,8 @@ class ExampleUnitTest {
                 amount = 2000000.0,
                 paidAmount = 2000000.0,
                 qtyKg = 100.0,
+                weightLossKg = 0.0,
+                mortalityRatePct = 0.0,
                 status = "confirmed"
             ),
             AyamTransaction(
