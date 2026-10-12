@@ -34,6 +34,8 @@ class ExampleUnitTest {
         assertTrue(summary.profit > 0.0)
         assertTrue(summary.stockKg > 0.0)
         assertTrue(summary.stockValue > 0.0)
+        assertEquals(0, summary.outputWeightMissingCount)
+        assertTrue(summary.profitComplete) // Historic purchases do not yet contain verified yield weights.
         // Utang DO from DO F-001 (5.484.000 - 3.000.000 = 2.484.000)
         assertEquals(2484000.0, summary.ap, 0.001)
     }
@@ -126,7 +128,7 @@ class ExampleUnitTest {
         val summary = AyamKasCalculator.calculate(listOf(purchase, batchCost, sale), listOf(sale))
         assertEquals(1600000.0, summary.revenue, 0.001)
         assertEquals(600000.0, summary.cogs, 0.001) // ((1,000,000 + 200,000) / 80) * 40
-        assertEquals(1600000.0, summary.expenses, 0.001) // No unrelated operating expenses in this period.
+        assertEquals(0.0, summary.expenses, 0.001) // The report period contains no unrelated operating expenses.
         assertEquals(1000000.0, summary.profit, 0.001)
         assertEquals(40.0, summary.stockKg, 0.001)
     }
