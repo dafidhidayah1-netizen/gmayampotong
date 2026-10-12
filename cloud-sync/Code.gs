@@ -27,6 +27,8 @@ function onOpen() {
     .addItem('Buat / Ganti Kunci Sinkronisasi', 'createAyamKasApiKey')
     .addItem('Hitung Ulang Ringkasan & Validasi', 'refreshAyamKasReports')
     .addItem('Cadangkan Spreadsheet ke Drive', 'backupAyamKasSpreadsheet')
+    .addItem('Aktifkan Backup Otomatis Harian', 'enableDailyAyamKasBackup')
+    .addItem('Nonaktifkan Backup Otomatis Harian', 'disableDailyAyamKasBackup')
     .addItem('Petunjuk Sambungkan Android', 'showAyamKasGuide')
     .addToUi();
 }
@@ -646,6 +648,34 @@ function refreshAyamKasReports() {
   doSheet.setColumnWidth(doCols['Ref DO'],140);
   doSheet.setColumnWidth(doCols['Status Stok/HPP'],180);
 }
+function enableDailyAyamKasBackup() {
+  ensureTables_();
+  const exists = ScriptApp.getProjectTriggers().some(function(trigger) {
+    return trigger.getHandlerFunction() === 'dailyAyamKasBackup';
+  });
+  if (!exists) {
+    ScriptApp.newTrigger('dailyAyamKasBackup').timeBased().everyDays(1).atHour(2).create();
+  }
+  SpreadsheetApp.getUi().alert(
+    'Backup otomatis harian aktif',
+    'Apps Script akan membuat satu salinan spreadsheet per hari sekitar pukul 02.00 menurut zona waktu proyek. Cadangan JSON lokal Android tetap harus dibuat terpisah.',
+    SpreadsheetApp.getUi().ButtonSet.OK
+  );
+}
+
+function disableDailyAyamKasBackup() {
+  ScriptApp.getProjectTriggers().forEach(function(trigger) {
+    if (trigger.getHandlerFunction() === 'dailyAyamKasBackup') ScriptApp.deleteTrigger(trigger);
+  });
+  SpreadsheetApp.getUi().alert('Backup otomatis harian dinonaktifkan');
+}
+
+function dailyAyamKasBackup() {
+  ensureTables_();
+  const result = backup_();
+  appendLog_('AUTO_BACKUP',result.fileId,'Apps Script','Backup harian otomatis: '+result.name);
+}
+
 function backupAyamKasSpreadsheet() {
   const result = backup_();
   SpreadsheetApp.getUi().alert('Cadangan selesai', result.name + '\n' + result.url, SpreadsheetApp.getUi().ButtonSet.OK);
