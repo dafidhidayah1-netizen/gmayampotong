@@ -72,6 +72,7 @@ function onEdit(e) {
   if (!e || !e.range) return;
   const sh = e.range.getSheet();
   if (e.range.getRow() < 2) return;
+  ensureTables_();
   if (sh.getName() !== 'Transaksi') {
     handleAuxSheetEdit_(sh,e);
     return;
@@ -129,12 +130,132 @@ function onEdit(e) {
       sh.getRange(row, cols.updatedAt).setValue(now);
       sh.getRange(row, cols.source).setValue('sheets');
       if (businessEdit && !deletedEdit) sh.getRange(row, cols.status).setValue('draft');
+      upsertCashMirrorFromTransaction_(sh,row,now);
     }
     applyCashFormulas_();
     refreshAyamKasReports();
   } finally {
     lock.releaseLock();
   }
+}
+
+function upsertCashMirrorFromTransaction_(txSheet,rowNumber,stamp) {
+  const txCols=columnMap_(txSheet);
+  const get=function(header){return txSheet.getRange(rowNumber,txCols[header]).getValue();};
+  const id=String(get('id')||'').trim();
+  if(!id) return;
+  const type=String(get('type')||'');
+  const status=String(get('status')||'').toLowerCase();
+  const isDeleted=get('deleted')===true || String(get('deleted')).toLowerCase()==='true';
+  const amount=Math.max(0,number_(get('amount')));
+  const paidValue=get('paidAmount');
+  const paid=paidValue===''||paidValue===null||paidValue===undefined?0:Math.max(0,number_(paidValue));
+  let direction='', movement=0;
+  switch(type) {
+    case 'capital_in': direction='IN'; movement=amount; break;
+    case 'sale': direction='IN'; movement=paid; break;
+    case 'receivable_payment': direction='IN'; movement=amount; break;
+    case 'purchase': case 'expense': direction='OUT'; movement=paid; break;
+    case 'capital_out': case 'supplier_payment': direction='OUT'; movement=amount; break;
+    default: direction=''; movement=0;
+  }
+  const cashSheet=SpreadsheetApp.getActiveSpreadsheet().getSheetByName('KasTransaksi');
+  const cashCols=columnMap_(cashSheet);
+  const cashId='CASH-'+id;
+  const ids=cashSheet.getLastRow()>1?cashSheet.getRange(2,cashCols.id,cashSheet.getLastRow()-1,1).getDisplayValues().flat():[];
+  const found=ids.indexOf(cashId);
+  const exists=found>=0;
+  const cashRecord={
+    id:cashId,sourceTransactionId:id,date:String(get('date')||''),
+    accountName:String(get('cashAccount')||'BELUM_DIPETAKAN'),
+    direction:direction||'OUT',amount:movement,
+    paymentMethod:String(get('paymentMethod')||'UNVERIFIED'),
+    category:type,description:String(get('description')||''),notes:String(get('notes')||''),
+    status:status==='confirmed'&&!isDeleted&&movement>0?'confirmed':'draft',
+    updatedAt:stamp||String(get('updatedAt')||new Date().toISOString()),
+    deleted:isDeleted||status!=='confirmed'||movement<=0||!direction
+  };
+  writeRecord_(cashSheet,Object.keys(cashCols).sort(function(a,b){return cashCols[a]-cashCols[b];}),cashRecord,exists?found+2:0);
+}
+
+function validateLoanRecordFromSheet_(sh,rowNumber) {
+  const cols=columnMap_(sh);
+  const get=function(header){return sh.getRange(rowNumber,cols[header]).getValue();};
+  const loan={
+    id:String(get('id')||''),date:String(get('date')||''),party:String(get('party')||''),
+    loanReference:String(get('loanReference')||'').trim(),loanType:String(get('loanType')||''),
+    direction:String(get('direction')||''),amount:number_(get('amount')),
+    status:String(get('status')||'').toLowerCase()
+  };
+  if(loan.amount<=0) return 'Nominal harus lebih dari nol.';
+  const debtTypes=['OWNER_LOAN','BUSINESS_BORROWING'];
+  const allowed={
+    OWNER_LOAN:['RECEIVED','REPAYMENT'],
+    BUSINESS_BORROWING:['RECEIVED','REPAYMENT'],
+    BUSINESS_LENDING:['GIVEN','COLLECTION'],
+    OWNER_INJECTION:['RECEIVED'],
+    OWNER_PERSONAL:['GIVEN'],
+    UNEXPECTED_COST:['GIVEN']
+  };
+  if(!allowed[loan.loanType] || allowed[loan.loanType].indexOf(loan.direction)<0) return 'Kategori dan arah kas tidak sesuai.';
+  if(debtTypes.concat(['BUSINESS_LENDING']).indexOf(loan.loanType)>=0 && !loan.loanReference) return 'Referensi pinjaman wajib diisi.';
+  if(loan.direction==='REPAYMENT'||loan.direction==='COLLECTION') {
+    if(!loan.loanReference) return 'Pelunasan/penagihan wajib memakai referensi pinjaman asal.';
+    const loanSheet=SpreadsheetApp.getActiveSpreadsheet().getSheetByName('PinjamanLuar');
+    const loanCols=columnMap_(loanSheet);
+    const records=loanSheet.getLastRow()>1?loanSheet.getRange(2,1,loanSheet.getLastRow()-1,loanSheet.getLastColumn()).getValues().map(function(row){return rowToObject_(Object.keys(loanCols).sort(function(a,b){return loanCols[a]-loanCols[b];}),row);}):[];
+    const sourceDirection=loan.direction==='REPAYMENT'?'RECEIVED':'GIVEN';
+    const settleDirection=loan.direction;
+    const linked=records.filter(function(record){
+      return String(record.id)!==loan.id&&String(record.status).toLowerCase()==='confirmed'&&
+        String(record.loanReference||'').trim().toLowerCase()===loan.loanReference.toLowerCase()&&
+        String(record.loanType)===loan.loanType;
+    });
+    const principal=linked.filter(function(record){return String(record.direction)===sourceDirection;}).reduce(function(sum,record){return sum+number_(record.amount);},0);
+    const settled=linked.filter(function(record){return String(record.direction)===settleDirection;}).reduce(function(sum,record){return sum+number_(record.amount);},0);
+    const outstanding=Math.max(0,principal-settled);
+    if(principal<=0) return 'Referensi pinjaman asal tidak ditemukan atau belum terverifikasi.';
+    if(loan.amount>outstanding+0.0001) return 'Nominal melebihi saldo pinjaman tersisa Rp'+Math.round(outstanding).toLocaleString('id-ID')+'.';
+  }
+  return '';
+}
+
+function validateTransferRecordFromSheet_(sh,rowNumber) {
+  const cols=columnMap_(sh);
+  const from=String(sh.getRange(rowNumber,cols.fromAccount).getValue()||'').trim();
+  const to=String(sh.getRange(rowNumber,cols.toAccount).getValue()||'').trim();
+  const amount=number_(sh.getRange(rowNumber,cols.amount).getValue());
+  if(!from||!to) return 'Akun asal dan tujuan wajib diisi.';
+  if(from.toLowerCase()===to.toLowerCase()) return 'Akun asal dan tujuan harus berbeda.';
+  if(amount<=0) return 'Nominal transfer harus lebih besar dari nol.';
+  return '';
+}
+
+function validatePayrollRecordFromSheet_(sh,rowNumber) {
+  const cols=columnMap_(sh);
+  const total=number_(sh.getRange(rowNumber,cols.totalPay).getValue());
+  const paid=number_(sh.getRange(rowNumber,cols.paidAmount).getValue());
+  const present=number_(sh.getRange(rowNumber,cols.daysPresent).getValue());
+  if(total<=0) return 'Total payroll harus lebih besar dari nol.';
+  if(present<0) return 'Hari hadir tidak boleh negatif.';
+  if(paid<0||paid>total) return 'Pembayaran payroll harus berada antara Rp0 dan total gaji.';
+  return '';
+}
+
+function invalidatePayrollForEmployee_(employeeId,stamp) {
+  if(!employeeId) return;
+  const sh=SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Payroll');
+  const cols=columnMap_(sh);
+  if(sh.getLastRow()<2) return;
+  const rows=sh.getRange(2,1,sh.getLastRow()-1,sh.getLastColumn()).getValues();
+  rows.forEach(function(row,index) {
+    const record={}; Object.keys(cols).forEach(function(header){record[header]=row[cols[header]-1];});
+    if(String(record.employeeId)===employeeId&&String(record.status).toUpperCase()!=='DRAFT') {
+      sh.getRange(index+2,cols.status).setValue('DRAFT');
+      sh.getRange(index+2,cols.updatedAt).setValue(stamp);
+      syncPayrollExpenseFromSheet_(sh,index+2,stamp);
+    }
+  });
 }
 
 function handleAuxSheetEdit_(sh,e) {
@@ -187,6 +308,28 @@ function handleAuxSheetEdit_(sh,e) {
       }
       sh.getRange(row,cols.updatedAt).setValue(now);
       if(!ready) continue;
+      if(sh.getName()==='KasTransfer' && String(sh.getRange(row,cols.status).getValue()).toLowerCase()==='confirmed') {
+        const error=validateTransferRecordFromSheet_(sh,row);
+        if(error) {
+          sh.getRange(row,cols.status).setValue('draft');
+          appendLog_('VALIDATION_BLOCKED',String(sh.getRange(row,cols.id).getValue()),'Sheets',error);
+        }
+      }
+      if(sh.getName()==='PinjamanLuar' && String(sh.getRange(row,cols.status).getValue()).toLowerCase()==='confirmed') {
+        const error=validateLoanRecordFromSheet_(sh,row);
+        if(error) {
+          sh.getRange(row,cols.status).setValue('draft');
+          appendLog_('VALIDATION_BLOCKED',String(sh.getRange(row,cols.id).getValue()),'Sheets',error);
+        }
+      }
+      if(sh.getName()==='Payroll' && String(sh.getRange(row,cols.status).getValue()).toUpperCase()!=='DRAFT') {
+        const error=validatePayrollRecordFromSheet_(sh,row);
+        if(error) {
+          sh.getRange(row,cols.status).setValue('DRAFT');
+          appendLog_('VALIDATION_BLOCKED',String(sh.getRange(row,cols.id).getValue()),'Sheets',error);
+        }
+      }
+      if(sh.getName()==='Karyawan') invalidatePayrollForEmployee_(String(sh.getRange(row,cols.id).getValue()||''),now);
       if(sh.getName()==='Payroll') syncPayrollExpenseFromSheet_(sh,row,now);
       if(sh.getName()==='Absensi') {
         invalidatePayrollForAttendance_(
