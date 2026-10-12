@@ -5,7 +5,6 @@ import com.example.data.model.AyamKasFormatters
 import com.example.data.model.AyamTransaction
 import com.example.data.model.BusinessLedgerCalculator
 import com.example.data.model.ExternalLoan
-import com.example.data.model.InitialAyamData
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
@@ -21,20 +20,17 @@ class ExampleUnitTest {
     }
 
     @Test
-    fun testRealOperationalDataAndCalculator() {
-        val realData = InitialAyamData.REAL_TRANSACTIONS
-        assertEquals(33, realData.size)
-        // Historical rows are loaded as drafts until their actual source documents,
-        // weights, payment amounts, and DO links have been checked by the owner.
-        assertTrue(realData.all { it.isDraft })
-
-        val summary = AyamKasCalculator.calculate(realData)
+    fun testEmptyLedgerProducesZeroBusinessTotalsWithoutSeedRecords() {
+        val summary = AyamKasCalculator.calculate(emptyList())
+        assertEquals(0, summary.totalCount)
         assertEquals(0, summary.confirmedCount)
-        assertEquals(33, summary.draftCount)
+        assertEquals(0, summary.draftCount)
         assertEquals(0.0, summary.cash, 0.001)
         assertEquals(0.0, summary.revenue, 0.001)
         assertEquals(0.0, summary.cogs, 0.001)
+        assertEquals(0.0, summary.grossProfit, 0.001)
         assertEquals(0.0, summary.profit, 0.001)
+        assertEquals(0.0, summary.stockKg, 0.001)
     }
 
     @Test
