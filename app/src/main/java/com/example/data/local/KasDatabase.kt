@@ -26,7 +26,7 @@ import com.example.data.model.PayrollRecord
         AttendanceRecord::class,
         PayrollRecord::class
     ],
-    version = 7,
+    version = 8,
     exportSchema = false
 )
 abstract class KasDatabase : RoomDatabase() {
@@ -34,6 +34,12 @@ abstract class KasDatabase : RoomDatabase() {
     abstract fun businessLedgerDao(): BusinessLedgerDao
 
     companion object {
+        private val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE external_loans ADD COLUMN loanReference TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
         private val MIGRATION_6_7 = object : Migration(6, 7) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 // Extend the transaction table without deleting the user's existing ledger.
@@ -142,7 +148,7 @@ abstract class KasDatabase : RoomDatabase() {
                     context.applicationContext,
                     KasDatabase::class.java,
                     "ayamkas_pro_real.db"
-                ).addMigrations(MIGRATION_6_7).build()
+                ).addMigrations(MIGRATION_6_7, MIGRATION_7_8).build()
                 INSTANCE = instance
                 instance
             }
