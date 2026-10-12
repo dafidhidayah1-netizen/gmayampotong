@@ -28,8 +28,8 @@ The endpoint's \`doGet\` response is a JSON health check. \`doPost\` accepts \`p
 
 1. **DO purchase:** one purchase record needs a stable \`ref\` (DO number), purchase amount, paid amount, and kg.
 2. **Sales/omzet:** record sale amount, collected amount (\`paidAmount\`), quantity sold (\`qtyKg\`), and link the sale to its source DO through \`batchRef\`.
-3. **Cash movement:** calculated from confirmed transactions and payment amounts; a transaction with empty \`paidAmount\` is currently interpreted as fully paid, matching the app's existing calculator. The \`Validasi\` sheet warns about missing payment data. Set paid amount to \`0\` for fully-credit transactions; enter an actual amount for partial settlement.
-4. **Stock and HPP per DO:** \`KartuDO\` calculates purchased kg, DO cost, HPP per purchased kg, sold kg, remaining kg, and remaining stock value. Negative stock, missing kg, or unlinked sales are flagged.
+3. **Cash movement:** calculated from confirmed transactions and money actually received/paid. Empty \`paidAmount\` is treated as Rp0 by both Android and Sheets; the \`Validasi\` sheet warns when the field is empty. Enter the actual payment amount, use \`0\` for fully-credit transactions, and enter the full amount only when fully paid/collected. Do not leave payment blank to mean fully paid.
+4. **Stock and HPP per DO:** \`KartuDO\` groups purchase rows that use the same DO reference and calculates total purchased kg/cost, weighted HPP per purchased kg, linked sold kg, remaining kg, and remaining stock value. Negative stock, missing kg, zero/invalid cost, and unlinked sales are flagged. A DO reference must identify the same physical batch; do not reuse it for a new delivery.
 5. **Profit:** omzet − estimated HPP of linked sales − operating expenses. Ringkasan labels the result **temporary** while HPP validation warnings exist.
 6. **Backup:** Drive backup copies the spreadsheet only. The app's **Ekspor JSON** remains the local phone backup.
 
@@ -48,6 +48,23 @@ The endpoint's \`doGet\` response is a JSON health check. \`doPost\` accepts \`p
 - Web App access and execution identity: https://developers.google.com/apps-script/manifest/web-app-api-executable
 - Google Sheets API quotas/limits: https://developers.google.com/workspace/sheets/api/limits
 - AppSheet offline behavior (alternative with different licensing/configuration): https://support.google.com/appsheet/answer/10107724
+
+
+
+## Operational control sequence (recommended)
+
+1. **Opening control:** enter opening cash and bank balances as starting balances; keep owner capital and operational income as distinct transaction types. Reconcile the opening amount against actual cash/bank statements.
+2. **Receive each DO:** record one stable DO reference, date, supplier, invoice/DO amount, amount paid, unpaid balance, and purchased weight. Use one reference for all rows that belong to the same delivery only.
+3. **Record cutting/production yield before final HPP:** record live/input kg, saleable carcass/output kg, weight loss, by-products, direct cutting labor, packaging, and other conversion cost per batch. If the source data does not record the output yield, the system must mark HPP/profit as incomplete rather than invent a yield percent.
+4. **Record sales by batch:** enter invoice number, customer, sale date, saleable kg, gross sale value, amount collected, and source DO/batch. Partial customer receipts must be linked to that invoice to support accurate aging.
+5. **Record payment and collection events:** for every amount paid/received after the original invoice, record a separate payment transaction linked to the supplier bill or customer invoice. Until those links are required and validated, payable/receivable numbers remain aggregate estimates, not invoice-by-invoice aging.
+6. **Record operating costs once:** enter cutting labor, packaging, transport, utilities, admin, other operating costs, and wages; classify costs consistently so direct conversion costs are not counted both inside HPP and again as operating expense.
+7. **Daily close:** compare app cash balance with actual cash and bank balances; compare physical stock with each DO card; check negative stock, missing payments, missing batch references, unverified records, and unsold kilograms. Resolve validation warnings before accepting profit as final.
+8. **Back up both sides:** backup the spreadsheet to Drive and separately export local Android JSON. Test restoring each backup before deleting or resetting data.
+
+## Important scope boundary
+
+This deployment connects **transaction ledger data** between Android and Sheets; it does not magically synchronize every sheet or every app module. Staff attendance/payroll, invoice-level receivable/payable, measured output yield and by-products must be implemented and linked to the same ledger before those reports can be considered complete. For this reason the current system must label profit as preliminary whenever cost/yield/payment validation remains unresolved.
 
 ## Validation checklist before real use
 
