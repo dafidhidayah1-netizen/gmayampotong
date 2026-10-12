@@ -18,7 +18,9 @@ data class CloudSyncStats(
     val serverAccepted: Int,
     val pulled: Int,
     val totalOnServer: Int,
-    val spreadsheetId: String
+    val spreadsheetId: String,
+    val conflicts: Int = 0,
+    val rejected: Int = 0
 )
 
 class AyamKasRepository(
@@ -30,7 +32,7 @@ class AyamKasRepository(
     suspend fun ensureSeededInitialData() {
         val count = dao.getTransactionCount()
         if (count == 0) {
-            dao.insertAll(InitialAyamData.REAL_TRANSACTIONS)
+            dao.insertAll(InitialAyamData.REAL_TRANSACTIONS.map { it.copy(status = "draft") })
         }
     }
 
@@ -86,7 +88,9 @@ class AyamKasRepository(
             serverAccepted = response.accepted,
             pulled = pulled,
             totalOnServer = response.transactions.size,
-            spreadsheetId = response.spreadsheetId
+            spreadsheetId = response.spreadsheetId,
+            conflicts = response.conflicts.size,
+            rejected = response.rejectedCount
         )
     }
 
@@ -130,6 +134,7 @@ class AyamKasRepository(
             amount = tx.amount,
             paidAmount = tx.paidAmount,
             qtyKg = tx.qtyKg,
+            saleableKg = tx.saleableKg,
             batchRef = tx.batchRef,
             notes = tx.notes,
             status = tx.status,
@@ -150,6 +155,7 @@ class AyamKasRepository(
             amount = deleted.amount,
             paidAmount = deleted.paidAmount,
             qtyKg = deleted.qtyKg,
+            saleableKg = deleted.saleableKg,
             batchRef = deleted.batchRef,
             notes = deleted.notes,
             status = deleted.status,
@@ -176,6 +182,7 @@ class AyamKasRepository(
                     amount = tx.amount,
                     paidAmount = tx.paidAmount,
                     qtyKg = tx.qtyKg,
+                    saleableKg = tx.saleableKg,
                     batchRef = tx.batchRef,
                     notes = tx.notes,
                     status = tx.status,
@@ -213,7 +220,7 @@ class AyamKasRepository(
             )
         }
         dao.clearAll()
-        dao.insertAll(defaults.map { it.copy(updatedAt = now) })
+        dao.insertAll(defaults.map { it.copy(status = "draft", updatedAt = now) })
     }
 
     fun generateJsonExport(transactions: List<AyamTransaction>): String {
@@ -234,6 +241,7 @@ class AyamKasRepository(
             item.put("amount", t.amount)
             if (t.paidAmount != null) item.put("paidAmount", t.paidAmount) else item.put("paidAmount", JSONObject.NULL)
             if (t.qtyKg != null) item.put("qtyKg", t.qtyKg) else item.put("qtyKg", JSONObject.NULL)
+            if (t.saleableKg != null) item.put("saleableKg", t.saleableKg) else item.put("saleableKg", JSONObject.NULL)
             item.put("batchRef", t.batchRef)
             item.put("notes", t.notes)
             item.put("status", t.status)
@@ -265,6 +273,7 @@ class AyamKasRepository(
 
                 val paidAmount = if (item.isNull("paidAmount") || !item.has("paidAmount")) null else item.optDouble("paidAmount")
                 val qtyKg = if (item.isNull("qtyKg") || !item.has("qtyKg")) null else item.optDouble("qtyKg")
+                val saleableKg = if (item.isNull("saleableKg") || !item.has("saleableKg")) null else item.optDouble("saleableKg")
 
                 list.add(
                     AyamTransaction(
@@ -277,6 +286,7 @@ class AyamKasRepository(
                         amount = amount,
                         paidAmount = paidAmount,
                         qtyKg = qtyKg,
+                        saleableKg = saleableKg,
                         batchRef = item.optString("batchRef", ""),
                         notes = item.optString("notes", ""),
                         status = item.optString("status", "draft"),
@@ -297,12 +307,13 @@ class AyamKasRepository(
     fun generateCsvExport(transactions: List<AyamTransaction>): String {
         val sb = StringBuilder()
         sb.append("\uFEFF") // UTF-8 BOM for Excel
-        sb.append("ID;Tanggal;Referensi;Jenis;Kategori;Keterangan;Nominal;Diterima/Dibayar;KG;Referensi DO;Status;Catatan\r\n")
+        sb.append("ID;Tanggal;Referensi;Jenis;Kategori;Keterangan;Nominal;Diterima/Dibayar;KG Masuk;KG Siap Jual;Referensi DO;Status;Catatan\r\n")
 
         for (t in transactions) {
             val typeLabel = AyamTransactionType.fromKey(t.type).label
             val paidStr = if (t.paidAmount != null) t.paidAmount.toLong().toString() else ""
             val qtyStr = if (t.qtyKg != null) t.qtyKg.toString() else ""
+            val saleableKgStr = if (t.saleableKg != null) t.saleableKg.toString() else ""
             val statusLabel = if (t.isConfirmed) "Terverifikasi" else "Perlu Verifikasi"
 
             fun escapeCsv(s: String): String {
@@ -319,6 +330,7 @@ class AyamKasRepository(
                 t.amount.toLong().toString(),
                 paidStr,
                 qtyStr,
+                saleableKgStr,
                 escapeCsv(t.batchRef),
                 escapeCsv(statusLabel),
                 escapeCsv(t.notes)
