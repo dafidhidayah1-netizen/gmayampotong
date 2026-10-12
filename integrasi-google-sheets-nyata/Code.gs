@@ -75,6 +75,7 @@ function dispatch_(action, payload) {
         spreadsheetId:SpreadsheetApp.getActiveSpreadsheet().getId(),
         sheets:Object.keys(SHEETS),
         transactions:list_('Transaksi'),
+        summary:list_('Ringkasan'),
         employees:list_('Karyawan'),
         attendance:list_('Absensi'),
         payroll:list_('Penggajian')
@@ -259,21 +260,15 @@ function sheetToModel_(rowObj) {
 }
 
 function upsertModel_(model) {
-  const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Transaksi');
-  const headers = headers_(sh);
-  const all = list_('Transaksi', true);
-  let targetRow = 0;
-  let existing = null;
-  for (let i=0; i<all.length; i++) {
-    if (String(all[i].id) === model.id) {
-      targetRow = i + 2;
-      existing = sheetToModel_(all[i]);
-      break;
-    }
-  }
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
+    const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Transaksi');
+    const headers = headers_(sh);
+    const all = list_('Transaksi', true);
+    const index = all.findIndex(row => String(row.id) === model.id);
+    const targetRow = index >= 0 ? index + 2 : 0;
+    const existing = index >= 0 ? sheetToModel_(all[index]) : null;
     const nowMs = Date.parse(model.updatedAt || '') || 0;
     const existingMs = existing ? (Date.parse(existing.updatedAt || '') || 0) : 0;
     if (existing && existingMs > nowMs) return {written:false,conflict:true};
@@ -293,7 +288,6 @@ function upsertModel_(model) {
     lock.releaseLock();
   }
 }
-
 function saveTransaction_(payload) {
   const model = normalizeTransaction_(payload);
   const result = upsertModel_(model);
@@ -347,27 +341,26 @@ function syncTransactions_(payload) {
   const deletedIds = Array.isArray(payload.deletedIds) ? payload.deletedIds.map(String) : [];
   const conflicts = [];
   const errors = [];
-  const lock = LockService.getScriptLock();
-  lock.waitLock(20000);
-  try {
-    incoming.forEach((raw) => {
-      try {
-        const model = normalizeTransaction_(raw);
-        const result = upsertModel_(model);
-        if (result.conflict) conflicts.push(model.id);
-      } catch (err) {
-        errors.push({id:String(raw && raw.id || ''),error:String(err.message || err)});
-      }
-    });
-    if (deletedIds.length) {
+  incoming.forEach(raw => {
+    try {
+      const model = normalizeTransaction_(raw);
+      const result = upsertModel_(model);
+      if (result.conflict) conflicts.push(model.id);
+    } catch (err) {
+      errors.push({id:String(raw && raw.id || ''),error:String(err.message || err)});
+    }
+  });
+  if (deletedIds.length) {
+    const lock = LockService.getScriptLock();
+    lock.waitLock(15000);
+    try {
       const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Transaksi');
       const headers = headers_(sh);
-      const idCol = headers.indexOf('id')+1;
+      const rows = list_('Transaksi',true);
       const deletedCol = headers.indexOf('deleted')+1;
       const updatedCol = headers.indexOf('updatedAt')+1;
-      const rows = list_('Transaksi',true);
       deletedIds.forEach(id => {
-        const index = rows.findIndex(r => String(r.id) === id);
+        const index = rows.findIndex(row => String(row.id) === id);
         if (index >= 0 && String(rows[index].deleted) !== 'true') {
           const row = index+2;
           sh.getRange(row,deletedCol).setValue(true);
@@ -375,9 +368,9 @@ function syncTransactions_(payload) {
           audit_('SOFT_DELETE','Transaksi',id,'Dihapus dari perangkat dan diarsipkan di cloud');
         }
       });
+    } finally {
+      lock.releaseLock();
     }
-  } finally {
-    lock.releaseLock();
   }
   recalculate_();
   return {
@@ -389,7 +382,6 @@ function syncTransactions_(payload) {
     rejected:errors
   };
 }
-
 function readTransactionModels_(includeDeleted) {
   return list_('Transaksi', !!includeDeleted).map(row => {
     const model = sheetToModel_(row);
