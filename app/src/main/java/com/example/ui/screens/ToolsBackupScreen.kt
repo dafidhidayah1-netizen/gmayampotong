@@ -162,7 +162,7 @@ fun ToolsBackupScreen(
                         }
                     }
                     Text(
-                        "Masukkan URL Web App Apps Script (/exec) dan kunci yang dibuat melalui menu AyamKas Pro pada spreadsheet.",
+                        "Masukkan URL Web App Apps Script (/exec) dan token AYAMKAS_API_TOKEN yang dibuat lewat fungsi configureApiToken() di editor Apps Script.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
