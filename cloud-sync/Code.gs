@@ -261,6 +261,8 @@ function sync_(payload) {
       const incomingRecords = Array.isArray(payload[key]) ? payload[key] : [];
       ledger[key] = mergeAuxRecords_(sheetName, incomingRecords);
     });
+    reconcileAuxCashRows_();
+    ledger.cashTransactions.records = readAuxRecords_('KasTransaksi');
     refreshAyamKasReports();
     appendLog_('SYNC','',String(payload.deviceName || 'Android'),JSON.stringify({
       diterima:accepted, versiServerDipertahankan:keptServerVersion, penghapusan:appliedDeletes,
@@ -288,6 +290,36 @@ function sync_(payload) {
   } finally {
     lock.releaseLock();
   }
+}
+
+function reconcileAuxCashRows_() {
+  const ss=SpreadsheetApp.getActiveSpreadsheet();
+  const txSheet=ss.getSheetByName('Transaksi');
+  const txHeaders=txSheet.getRange(1,1,1,txSheet.getLastColumn()).getDisplayValues()[0].map(String);
+  const txRows=txSheet.getLastRow()>1 ? txSheet.getRange(2,1,txSheet.getLastRow()-1,txHeaders.length).getValues() : [];
+  const txById=new Map();
+  txRows.forEach(function(row) {
+    const tx=rowToObject_(txHeaders,row);
+    if(tx.id) txById.set(String(tx.id),tx);
+  });
+  const cashSheet=ss.getSheetByName('KasTransaksi');
+  if(!cashSheet || cashSheet.getLastRow()<2) return;
+  const headers=cashSheet.getRange(1,1,1,cashSheet.getLastColumn()).getDisplayValues()[0].map(String);
+  const cols=columnMap_(cashSheet);
+  const rows=cashSheet.getRange(2,1,cashSheet.getLastRow()-1,headers.length).getValues();
+  rows.forEach(function(row,index) {
+    const record=rowToObject_(headers,row);
+    const source=String(record.sourceTransactionId||'');
+    if(!source || source.indexOf('LOAN-')===0) return;
+    const linked=txById.get(source);
+    if(!linked) return;
+    const shouldDelete=String(linked.deleted).toLowerCase()==='true' || String(linked.status).toLowerCase()!=='confirmed';
+    const currentlyDeleted=String(record.deleted).toLowerCase()==='true';
+    if(shouldDelete!==currentlyDeleted) {
+      cashSheet.getRange(index+2,cols.deleted).setValue(shouldDelete);
+      cashSheet.getRange(index+2,cols.updatedAt).setValue(String(linked.updatedAt||new Date().toISOString()));
+    }
+  });
 }
 
 function mergeAuxRecords_(sheetName, incoming) {
