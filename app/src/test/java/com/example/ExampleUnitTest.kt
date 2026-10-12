@@ -98,6 +98,55 @@ class ExampleUnitTest {
         assertEquals("Terhitung", row.status)
     }
 
+
+    @Test
+    fun testReportUsesPurchaseFromEarlierPeriodForSaleHpp() {
+        val transactions = listOf(
+            AyamTransaction(
+                id = "TX-SEP-DO",
+                date = "2026-09-30",
+                ref = "DO-SEP-001",
+                type = "purchase",
+                description = "DO ayam September",
+                amount = 2000000.0,
+                paidAmount = 2000000.0,
+                qtyKg = 100.0,
+                status = "confirmed"
+            ),
+            AyamTransaction(
+                id = "TX-OCT-SALE",
+                date = "2026-10-02",
+                ref = "SALE-OCT-001",
+                type = "sale",
+                description = "Penjualan Oktober dari DO September",
+                amount = 1200000.0,
+                paidAmount = 1200000.0,
+                qtyKg = 40.0,
+                batchRef = "DO-SEP-001",
+                status = "confirmed"
+            ),
+            AyamTransaction(
+                id = "TX-OCT-EXP",
+                date = "2026-10-02",
+                ref = "EXP-OCT-001",
+                type = "expense",
+                description = "Biaya operasional Oktober",
+                amount = 100000.0,
+                paidAmount = 100000.0,
+                status = "confirmed"
+            )
+        )
+        val october = transactions.filter { it.isConfirmed && it.date.startsWith("2026-10") }
+        val summary = AyamKasCalculator.calculate(transactions, october)
+
+        assertEquals(1200000.0, summary.revenue, 0.001)
+        assertEquals(800000.0, summary.cogs, 0.001)
+        assertEquals(100000.0, summary.expenses, 0.001)
+        assertEquals(300000.0, summary.profit, 0.001)
+        assertTrue(summary.profitComplete)
+        assertEquals(60.0, summary.stockKg, 0.001)
+    }
+
     @Test
     fun testDateFormatting() {
         val formatted = AyamKasFormatters.formatDate("2026-10-10")
