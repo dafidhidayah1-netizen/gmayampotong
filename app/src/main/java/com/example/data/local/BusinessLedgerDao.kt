@@ -29,7 +29,7 @@ interface BusinessLedgerDao {
     @Query("DELETE FROM cash_transactions WHERE sourceTransactionId = :sourceId")
     suspend fun deleteCashForSource(sourceId: String)
 
-    @Query("DELETE FROM cash_transactions WHERE sourceTransactionId IS NOT NULL")
+    @Query("DELETE FROM cash_transactions WHERE sourceTransactionId IS NOT NULL AND sourceTransactionId NOT LIKE 'LOAN-%'")
     suspend fun clearMirroredCashTransactions()
 
     @Query("SELECT * FROM cash_flows ORDER BY date DESC, id DESC")
