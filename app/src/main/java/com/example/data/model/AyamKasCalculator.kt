@@ -189,6 +189,7 @@ object AyamKasCalculator {
             salesCash = revenueTx.filter { it.paymentMethod.equals("CASH", true) }.sumOf { it.paidAmount ?: 0.0 },
             salesTransfer = revenueTx.filter { it.paymentMethod.equals("TRANSFER", true) }.sumOf { it.paidAmount ?: 0.0 },
             salesQris = revenueTx.filter { it.paymentMethod.equals("QRIS", true) }.sumOf { it.paidAmount ?: 0.0 },
+            salesUnclassified = revenueTx.filter { it.paymentMethod.uppercase() !in setOf("CASH", "TRANSFER", "QRIS") }.sumOf { it.paidAmount ?: 0.0 },
             grossProfit = grossProfit,
             grossMarginPercent = grossMarginPercent,
             batchDataIncomplete = batchDataIncomplete,
