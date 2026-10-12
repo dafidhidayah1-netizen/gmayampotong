@@ -8,12 +8,13 @@ object AyamKasCalculator {
         val purchaseCost: Double,
         val weightLossKg: Double,
         val mortalityKg: Double,
+        val weightGainKg: Double,
         val processingCost: Double,
         val feedCost: Double,
         val soldKg: Double,
         val productionDataComplete: Boolean
     ) {
-        val saleableKg: Double get() = (purchaseKg - weightLossKg - mortalityKg).coerceAtLeast(0.0)
+        val saleableKg: Double get() = (purchaseKg + weightGainKg - weightLossKg - mortalityKg).coerceAtLeast(0.0)
         val totalCost: Double get() = purchaseCost + processingCost + feedCost
         val remainingKg: Double get() = saleableKg - soldKg
         val costPerKg: Double get() = if (saleableKg > 0) totalCost / saleableKg else 0.0
@@ -50,6 +51,7 @@ object AyamKasCalculator {
             val purchaseKg = batchPurchases.sumOf { (it.qtyKg ?: 0.0).coerceAtLeast(0.0) }
             val purchaseCost = batchPurchases.sumOf { it.amount.coerceAtLeast(0.0) }
             val weightLossKg = batchPurchases.sumOf { (it.weightLossKg ?: 0.0).coerceAtLeast(0.0) }
+            val weightGainKg = batchPurchases.sumOf { (it.weightGainKg ?: 0.0).coerceAtLeast(0.0) }
             val mortalityKg = batchPurchases.sumOf { p ->
                 val rate = (p.mortalityRatePct ?: 0.0).coerceIn(0.0, 100.0)
                 (p.qtyKg ?: 0.0).coerceAtLeast(0.0) * rate / 100.0
@@ -80,6 +82,7 @@ object AyamKasCalculator {
                 purchaseCost = purchaseCost,
                 weightLossKg = weightLossKg,
                 mortalityKg = mortalityKg,
+                weightGainKg = weightGainKg,
                 processingCost = processingCost,
                 feedCost = feedCost,
                 soldKg = soldKg,
@@ -212,6 +215,7 @@ object AyamKasCalculator {
             val purchasedKg = batchPurchases.sumOf { (it.qtyKg ?: 0.0).coerceAtLeast(0.0) }
             val baseCost = batchPurchases.sumOf { it.amount.coerceAtLeast(0.0) }
             val weightLossKg = batchPurchases.sumOf { (it.weightLossKg ?: 0.0).coerceAtLeast(0.0) }
+            val weightGainKg = batchPurchases.sumOf { (it.weightGainKg ?: 0.0).coerceAtLeast(0.0) }
             val mortalityKg = batchPurchases.sumOf { p ->
                 (p.qtyKg ?: 0.0).coerceAtLeast(0.0) *
                     (p.mortalityRatePct ?: 0.0).coerceIn(0.0, 100.0) / 100.0
@@ -223,7 +227,7 @@ object AyamKasCalculator {
                 else 0.0
             }
             val totalCost = baseCost + processCost + feedCost
-            val saleableKg = (purchasedKg - weightLossKg - mortalityKg).coerceAtLeast(0.0)
+            val saleableKg = (purchasedKg + weightGainKg - weightLossKg - mortalityKg).coerceAtLeast(0.0)
             val linkedSales = if (ref.isBlank()) emptyList() else sales.filter {
                 it.batchRef.trim().equals(ref, ignoreCase = true)
             }
