@@ -22,7 +22,16 @@ data class AyamTransaction(
     val notes: String = "",
     val status: String = "confirmed", // "confirmed" or "draft"
     val source: String = "real",
-    val updatedAt: String = ""
+    val updatedAt: String = "",
+    @androidx.room.ColumnInfo(defaultValue = "'CASH'") val paymentMethod: String = "CASH",
+    @androidx.room.ColumnInfo(defaultValue = "'DOMPET'") val cashAccount: String = "DOMPET",
+    @androidx.room.ColumnInfo(defaultValue = "''") val supplier: String = "",
+    val weightLossKg: Double? = null,
+    val mortalityRatePct: Double? = null,
+    val fcr: Double? = null,
+    val weightGainKg: Double? = null,
+    val feedPricePerKg: Double? = null,
+    @androidx.room.ColumnInfo(defaultValue = "0") val processingCost: Double = 0.0
 ) {
     val isConfirmed: Boolean get() = status == "confirmed"
     val isDraft: Boolean get() = status == "draft"
@@ -58,7 +67,16 @@ data class DeletedAyamTransaction(
     val batchRef: String,
     val notes: String,
     val status: String,
-    val source: String
+    val source: String,
+    @androidx.room.ColumnInfo(defaultValue = "'CASH'") val paymentMethod: String = "CASH",
+    @androidx.room.ColumnInfo(defaultValue = "'DOMPET'") val cashAccount: String = "DOMPET",
+    @androidx.room.ColumnInfo(defaultValue = "''") val supplier: String = "",
+    val weightLossKg: Double? = null,
+    val mortalityRatePct: Double? = null,
+    val fcr: Double? = null,
+    val weightGainKg: Double? = null,
+    val feedPricePerKg: Double? = null,
+    @androidx.room.ColumnInfo(defaultValue = "0") val processingCost: Double = 0.0
 )
 
 enum class AyamTransactionType(
