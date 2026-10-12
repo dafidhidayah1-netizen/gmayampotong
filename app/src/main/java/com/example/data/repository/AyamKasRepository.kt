@@ -1,7 +1,14 @@
 package com.example.data.repository
 
 import com.example.data.local.AyamKasDao
+import com.example.data.local.BusinessLedgerDao
 import com.example.data.model.AyamTransaction
+import com.example.data.model.CashTransaction
+import com.example.data.model.CashFlow
+import com.example.data.model.ExternalLoan
+import com.example.data.model.EmployeeRecord
+import com.example.data.model.AttendanceRecord
+import com.example.data.model.PayrollRecord
 import com.example.data.model.AyamTransactionType
 import com.example.data.model.DeletedAyamTransaction
 import com.example.data.model.InitialAyamData
@@ -22,10 +29,18 @@ data class CloudSyncStats(
 )
 
 class AyamKasRepository(
-    private val dao: AyamKasDao
+    private val dao: AyamKasDao,
+    private val businessDao: BusinessLedgerDao
 ) {
     val allTransactions: Flow<List<AyamTransaction>> = dao.getAllTransactions()
     val allDeleted: Flow<List<DeletedAyamTransaction>> = dao.getAllDeleted()
+    val cashTransactions: Flow<List<CashTransaction>> = businessDao.observeCashTransactions()
+    val confirmedCashTransactions: Flow<List<CashTransaction>> = businessDao.observeConfirmedCashTransactions()
+    val cashFlows: Flow<List<CashFlow>> = businessDao.observeCashFlows()
+    val externalLoans: Flow<List<ExternalLoan>> = businessDao.observeExternalLoans()
+    val employees: Flow<List<EmployeeRecord>> = businessDao.observeEmployees()
+    val attendance: Flow<List<AttendanceRecord>> = businessDao.observeAttendance()
+    val payroll: Flow<List<PayrollRecord>> = businessDao.observePayroll()
 
     suspend fun ensureSeededInitialData() {
         val count = dao.getTransactionCount()
@@ -35,13 +50,79 @@ class AyamKasRepository(
     }
 
     suspend fun saveTransaction(tx: AyamTransaction) {
-        dao.insertTransaction(tx.copy(updatedAt = nowIso()))
+        val saved = tx.copy(updatedAt = nowIso())
+        dao.insertTransaction(saved)
+        updateCashMirror(saved)
+    }
+
+    private suspend fun updateCashMirror(tx: AyamTransaction) {
+        val amount = if (!tx.isConfirmed) 0.0 else kotlin.math.abs(tx.cashEffect())
+        if (amount <= 0.0) {
+            businessDao.deleteCashForSource(tx.id)
+            return
+        }
+        val direction = if (tx.cashEffect() >= 0.0) "IN" else "OUT"
+        businessDao.saveCashTransaction(
+            CashTransaction(
+                id = "CASH-${tx.id}",
+                sourceTransactionId = tx.id,
+                date = tx.date,
+                accountName = tx.cashAccount,
+                direction = direction,
+                amount = amount,
+                paymentMethod = tx.paymentMethod,
+                category = tx.type,
+                description = tx.description,
+                notes = tx.notes,
+                status = tx.status,
+                updatedAt = tx.updatedAt,
+                deleted = false
+            )
+        )
+    }
+
+    suspend fun saveCashFlow(flow: CashFlow) {
+        require(flow.amount > 0.0) { "Nilai transfer harus lebih besar dari nol" }
+        require(flow.fromAccount.isNotBlank() && flow.toAccount.isNotBlank()) { "Rekening asal dan tujuan wajib diisi" }
+        require(!flow.fromAccount.equals(flow.toAccount, ignoreCase = true)) { "Rekening asal dan tujuan tidak boleh sama" }
+        businessDao.saveCashFlow(flow.copy(updatedAt = nowIso()))
+    }
+
+    suspend fun saveExternalLoan(loan: ExternalLoan) {
+        require(loan.amount > 0.0) { "Nominal pinjaman harus lebih dari nol" }
+        require(loan.paidAmount >= 0.0 && loan.paidAmount <= loan.amount) { "Nominal dibayar harus di antara nol dan nilai pinjaman" }
+        require(loan.party.isNotBlank()) { "Nama pihak pinjaman wajib diisi" }
+        businessDao.saveExternalLoan(loan.copy(updatedAt = nowIso()))
+    }
+
+    suspend fun saveEmployee(employee: EmployeeRecord) {
+        require(employee.name.isNotBlank()) { "Nama karyawan wajib diisi" }
+        require(employee.dailyRate >= 0.0) { "Tarif harian tidak boleh negatif" }
+        businessDao.saveEmployee(employee.copy(updatedAt = nowIso()))
+    }
+
+    suspend fun saveAttendance(record: AttendanceRecord) {
+        require(record.employeeId.isNotBlank() && record.workDate.isNotBlank()) { "Karyawan dan tanggal wajib diisi" }
+        if (record.status == "PRESENT") {
+            require(record.clockIn.isNotBlank() && record.clockOut.isNotBlank()) { "Jam masuk dan keluar wajib diisi untuk status hadir" }
+        }
+        require(record.overtimeHours >= 0.0 && record.breakMinutes >= 0) { "Jam lembur dan istirahat tidak valid" }
+        businessDao.saveAttendance(record.copy(updatedAt = nowIso()))
+    }
+
+    suspend fun savePayroll(record: PayrollRecord) {
+        require(record.daysPresent >= 0.0 && record.overtimeHours >= 0.0) { "Hari hadir/jam lembur tidak boleh negatif" }
+        require(record.deductions >= 0.0 && record.paidAmount >= 0.0 && record.paidAmount <= record.totalPay) { "Potongan/pembayaran tidak valid" }
+        require(record.totalPay >= 0.0) { "Total upah tidak boleh negatif" }
+        businessDao.savePayroll(record.copy(updatedAt = nowIso()))
     }
 
     suspend fun toggleConfirm(id: String, currentStatus: String) {
         val current = dao.getTransactionById(id) ?: return
         val newStatus = if (currentStatus == "confirmed") "draft" else "confirmed"
-        dao.insertTransaction(current.copy(status = newStatus, updatedAt = nowIso()))
+        val saved = current.copy(status = newStatus, updatedAt = nowIso())
+        dao.insertTransaction(saved)
+        updateCashMirror(saved)
     }
 
     /** Merge Room data with the Apps Script ledger by stable ID and update timestamp. */
@@ -135,8 +216,19 @@ class AyamKasRepository(
             status = tx.status,
             source = tx.source
         )
-        dao.insertDeleted(deleted)
+        dao.insertDeleted(deleted.copy(
+            paymentMethod = tx.paymentMethod,
+            cashAccount = tx.cashAccount,
+            supplier = tx.supplier,
+            weightLossKg = tx.weightLossKg,
+            mortalityRatePct = tx.mortalityRatePct,
+            fcr = tx.fcr,
+            weightGainKg = tx.weightGainKg,
+            feedPricePerKg = tx.feedPricePerKg,
+            processingCost = tx.processingCost
+        ))
         dao.deleteTransaction(tx.id)
+        businessDao.deleteCashForSource(tx.id)
     }
 
     suspend fun restoreDeleted(deleted: DeletedAyamTransaction) {
@@ -156,7 +248,17 @@ class AyamKasRepository(
             source = deleted.source,
             updatedAt = nowIso()
         )
-        dao.insertTransaction(restored)
+        saveTransaction(restored.copy(
+            paymentMethod = deleted.paymentMethod,
+            cashAccount = deleted.cashAccount,
+            supplier = deleted.supplier,
+            weightLossKg = deleted.weightLossKg,
+            mortalityRatePct = deleted.mortalityRatePct,
+            fcr = deleted.fcr,
+            weightGainKg = deleted.weightGainKg,
+            feedPricePerKg = deleted.feedPricePerKg,
+            processingCost = deleted.processingCost
+        ))
         dao.deleteDeleted(deleted.id)
     }
 
@@ -184,6 +286,7 @@ class AyamKasRepository(
             )
         }
         dao.clearAll()
+        businessDao.clearMirroredCashTransactions()
     }
 
     suspend fun restoreDefaultData() {
@@ -213,6 +316,7 @@ class AyamKasRepository(
             )
         }
         dao.clearAll()
+        businessDao.clearMirroredCashTransactions()
         dao.insertAll(defaults.map { it.copy(updatedAt = now) })
     }
 
