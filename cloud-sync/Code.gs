@@ -159,7 +159,9 @@ function handleAuxSheetEdit_(sh,e) {
   try {
     const firstRow=e.range.getRow(), lastRow=firstRow+e.range.getNumRows()-1;
     const now=new Date().toISOString();
+    let latestEditedRow=0;
     for(let row=firstRow;row<=lastRow;row++) {
+      latestEditedRow=row;
       const values={};
       profile.required.forEach(function(header){values[header]=sh.getRange(row,cols[header]).getValue();});
       const ready=profile.required.every(function(header){
@@ -183,6 +185,14 @@ function handleAuxSheetEdit_(sh,e) {
       }
       sh.getRange(row,cols.updatedAt).setValue(now);
       if(!ready) continue;
+      if(sh.getName()==='Payroll') syncPayrollExpenseFromSheet_(sh,row,now);
+      if(sh.getName()==='Absensi') {
+        invalidatePayrollForAttendance_(
+          String(sh.getRange(row,cols.employeeId).getDisplayValue()||''),
+          String(sh.getRange(row,cols.workDate).getDisplayValue()||''),
+          now
+        );
+      }
     }
   } finally {
     lock.releaseLock();
@@ -368,14 +378,80 @@ function reconcileAuxCashRows_() {
   rows.forEach(function(row,index) {
     const record=rowToObject_(headers,row);
     const source=String(record.sourceTransactionId||'');
-    if(!source || source.indexOf('LOAN-')===0) return;
-    const linked=txById.get(source);
-    if(!linked) return;
-    const shouldDelete=String(linked.deleted).toLowerCase()==='true' || String(linked.status).toLowerCase()!=='confirmed';
+    if(!source) return;
+    let linked=null, shouldDelete=false;
+    if(source.indexOf('LOAN-')===0) {
+      const loanSheet=ss.getSheetByName('PinjamanLuar');
+      const loanHeaders=loanSheet.getRange(1,1,1,loanSheet.getLastColumn()).getDisplayValues()[0].map(String);
+      const loanRows=loanSheet.getLastRow()>1 ? loanSheet.getRange(2,1,loanSheet.getLastRow()-1,loanHeaders.length).getValues() : [];
+      const loanId=source.substring('LOAN-'.length);
+      const loanRow=loanRows.map(function(row){return rowToObject_(loanHeaders,row);})
+        .find(function(item){return String(item.id||'')===loanId;});
+      if(!loanRow) return;
+      linked=loanRow;
+      shouldDelete=String(loanRow.status).toLowerCase()!=='confirmed';
+    } else {
+      linked=txById.get(source);
+      if(!linked) return;
+      shouldDelete=String(linked.deleted).toLowerCase()==='true' || String(linked.status).toLowerCase()!=='confirmed';
+    }
     const currentlyDeleted=String(record.deleted).toLowerCase()==='true';
     if(shouldDelete!==currentlyDeleted) {
       cashSheet.getRange(index+2,cols.deleted).setValue(shouldDelete);
       cashSheet.getRange(index+2,cols.updatedAt).setValue(String(linked.updatedAt||new Date().toISOString()));
+    }
+  });
+}
+
+function syncPayrollExpenseFromSheet_(payrollSheet,rowNumber,stamp) {
+  const pCols=columnMap_(payrollSheet);
+  const payroll={
+    id:String(payrollSheet.getRange(rowNumber,pCols.id).getDisplayValue()||''),
+    employeeId:String(payrollSheet.getRange(rowNumber,pCols.employeeId).getDisplayValue()||''),
+    employeeName:String(payrollSheet.getRange(rowNumber,pCols.employeeName).getDisplayValue()||''),
+    period:String(payrollSheet.getRange(rowNumber,pCols.period).getDisplayValue()||''),
+    totalPay:number_(payrollSheet.getRange(rowNumber,pCols.totalPay).getValue()),
+    paidAmount:number_(payrollSheet.getRange(rowNumber,pCols.paidAmount).getValue()),
+    paymentMethod:String(payrollSheet.getRange(rowNumber,pCols.paymentMethod).getDisplayValue()||'TRANSFER'),
+    cashAccount:String(payrollSheet.getRange(rowNumber,pCols.cashAccount).getDisplayValue()||'ATM/BANK'),
+    status:String(payrollSheet.getRange(rowNumber,pCols.status).getDisplayValue()||'DRAFT')
+  };
+  if(!payroll.id || !payroll.employeeId || !/^\d{4}-\d{2}$/.test(payroll.period) || payroll.totalPay<=0) return;
+  const txSheet=SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Transaksi');
+  const txHeaders=txSheet.getRange(1,1,1,txSheet.getLastColumn()).getDisplayValues()[0].map(String);
+  const txCols=columnMap_(txSheet);
+  const id='PAYROLL-'+payroll.id;
+  const ids=txSheet.getLastRow()>1 ? txSheet.getRange(2,txCols.id,txSheet.getLastRow()-1,1).getDisplayValues().flat() : [];
+  const found=ids.indexOf(id);
+  const row={
+    id:id,updatedAt:stamp||new Date().toISOString(),date:payroll.period+'-01',
+    ref:'PAY-'+payroll.period+'-'+payroll.employeeId,type:'expense',category:'Gaji',
+    description:'Upah '+payroll.employeeName+' periode '+payroll.period,
+    amount:payroll.totalPay,paidAmount:payroll.paidAmount,qtyKg:'',batchRef:'',
+    notes:'Diposting dari lembar Payroll '+payroll.id,
+    status:payroll.status==='DRAFT'?'draft':'confirmed',source:'sheets',
+    deleted:false,deletedAt:'',paymentMethod:payroll.paymentMethod,cashAccount:payroll.cashAccount,
+    supplier:'',weightLossKg:'',mortalityRatePct:'',fcr:'',weightGainKg:'',feedPricePerKg:'',processingCost:0,
+    cashEffect:'',effectivePaid:''
+  };
+  writeRecord_(txSheet,txHeaders,row,found>=0?found+2:0);
+  applyCashFormulas_();
+  refreshAyamKasReports();
+}
+
+function invalidatePayrollForAttendance_(employeeId,workDate,stamp) {
+  if(!employeeId || !/^\d{4}-\d{2}-\d{2}$/.test(workDate)) return;
+  const period=workDate.substring(0,7);
+  const payrollSheet=SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Payroll');
+  const headers=payrollSheet.getRange(1,1,1,payrollSheet.getLastColumn()).getDisplayValues()[0].map(String);
+  const cols=columnMap_(payrollSheet);
+  const rows=payrollSheet.getLastRow()>1?payrollSheet.getRange(2,1,payrollSheet.getLastRow()-1,headers.length).getValues():[];
+  rows.forEach(function(row,index) {
+    const record=rowToObject_(headers,row);
+    if(String(record.employeeId)===employeeId && String(record.period)===period) {
+      payrollSheet.getRange(index+2,cols.status).setValue('DRAFT');
+      payrollSheet.getRange(index+2,cols.updatedAt).setValue(stamp);
+      syncPayrollExpenseFromSheet_(payrollSheet,index+2,stamp);
     }
   });
 }
