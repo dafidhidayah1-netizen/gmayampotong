@@ -397,6 +397,10 @@ class AyamKasViewModel(application: Application) : AndroidViewModel(application)
             viewModelScope.launch { _userMessage.emit(invalid) }
             return
         }
+        if (allTransactions.value.any { it.type == "purchase" && it.ref.trim().equals(doNumber.trim(), ignoreCase = true) }) {
+            viewModelScope.launch { _userMessage.emit("Nomor DO sudah digunakan. Gunakan referensi unik untuk setiap pengiriman fisik.") }
+            return
+        }
         saveTransaction(
             id = null,
             date = date,
@@ -452,6 +456,46 @@ class AyamKasViewModel(application: Application) : AndroidViewModel(application)
         feedPricePerKg: Double? = null,
         processingCost: Double = 0.0
     ) {
+        val existingBeforeSave = id?.let { key -> allTransactions.value.firstOrNull { it.id == key } }
+        if (date.length != 10 || date[4] != '-' || date[7] != '-') {
+            viewModelScope.launch { _userMessage.emit("Tanggal transaksi harus berformat YYYY-MM-DD") }
+            return
+        }
+        if (amount <= 0.0) {
+            viewModelScope.launch { _userMessage.emit("Nominal transaksi harus lebih dari nol") }
+            return
+        }
+        if (type in listOf("sale", "purchase", "expense") &&
+            (paidAmount == null || paidAmount < 0.0 || paidAmount > amount)) {
+            viewModelScope.launch { _userMessage.emit("Pembayaran harus diisi di antara Rp0 dan nominal transaksi") }
+            return
+        }
+        if (type == "sale" && isConfirmed) {
+            val quantity = qtyKg ?: 0.0
+            if (quantity <= 0.0 || batchRef.isBlank()) {
+                viewModelScope.launch { _userMessage.emit("Penjualan terverifikasi wajib memiliki kg terjual dan tautan DO sumber") }
+                return
+            }
+            val transactionsWithoutEditedSale = allTransactions.value.filterNot { it.id == existingBeforeSave?.id }
+            val sourcePurchase = transactionsWithoutEditedSale.firstOrNull {
+                it.type == "purchase" && it.isConfirmed && it.ref.trim().equals(batchRef.trim(), ignoreCase = true)
+            }
+            if (sourcePurchase == null) {
+                viewModelScope.launch { _userMessage.emit("DO sumber belum ada atau belum terverifikasi; penjualan tidak disimpan sebagai transaksi terverifikasi") }
+                return
+            }
+            if (date < sourcePurchase.date) {
+                viewModelScope.launch { _userMessage.emit("Tanggal penjualan tidak boleh sebelum tanggal pembelian DO sumber") }
+                return
+            }
+            val stock = AyamKasCalculator.calculateStockRows(transactionsWithoutEditedSale)
+                .firstOrNull { it.purchaseTx.ref.trim().equals(batchRef.trim(), ignoreCase = true) }
+            val available = stock?.remainingKg ?: 0.0
+            if (quantity > available + 0.0001) {
+                viewModelScope.launch { _userMessage.emit("Stok DO ${batchRef.trim()} tidak cukup: tersedia ${AyamKasFormatters.formatNumber(available)} kg") }
+                return
+            }
+        }
         viewModelScope.launch {
             val txId = id?.ifBlank { null } ?: "TX-${System.currentTimeMillis()}"
             val existing = allTransactions.value.firstOrNull { it.id == txId }
