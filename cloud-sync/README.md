@@ -62,6 +62,10 @@ The endpoint's \`doGet\` response is a JSON health check. \`doPost\` accepts \`p
 7. **Daily close:** compare app cash balance with actual cash and bank balances; compare physical stock with each DO card; check negative stock, missing payments, missing batch references, unverified records, and unsold kilograms. Resolve validation warnings before accepting profit as final.
 8. **Back up both sides:** backup the spreadsheet to Drive and separately export local Android JSON. Test restoring each backup before deleting or resetting data.
 
+## Editing the ledger directly in Google Sheets
+
+Editing cells in the managed \`Transaksi\` sheet is also supported. The bound Apps Script stamps the row with a new \`updatedAt\` and source \`sheets\`; changing business data marks the row as \`draft\` and refreshes formulas/validation. Review the row and explicitly set its status back to \`confirmed\` after checking it. The next Android sync pulls the newer version. Do not edit generated report formulas by hand; use the \`AyamKas Pro → Hitung Ulang Ringkasan & Validasi\` menu if needed.
+
 ## Important scope boundary
 
 This deployment connects **transaction ledger data** between Android and Sheets; it does not magically synchronize every sheet or every app module. Staff attendance/payroll, invoice-level receivable/payable, measured output yield and by-products must be implemented and linked to the same ledger before those reports can be considered complete. For this reason the current system must label profit as preliminary whenever cost/yield/payment validation remains unresolved.
