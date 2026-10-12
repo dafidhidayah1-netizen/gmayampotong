@@ -15,7 +15,7 @@ const TABLES = {
   LogSinkronisasi: ['Waktu','Aksi','ID Transaksi','Perangkat/Pengguna','Keterangan'],
   KasTransaksi: ['id','sourceTransactionId','date','accountName','direction','amount','paymentMethod','category','description','notes','status','updatedAt','deleted'],
   KasTransfer: ['id','date','fromAccount','toAccount','amount','reference','notes','status','updatedAt'],
-  PinjamanLuar: ['id','date','party','loanType','direction','amount','paidAmount','dueDate','cashAccount','notes','status','updatedAt'],
+  PinjamanLuar: ['id','date','party','loanReference','loanType','direction','amount','paidAmount','dueDate','cashAccount','notes','status','updatedAt'],
   Karyawan: ['id','name','position','dailyRate','standardHoursPerShift','overtimeRatePerHour','active','updatedAt'],
   Absensi: ['id','employeeId','employeeName','workDate','shiftName','clockIn','clockOut','breakMinutes','overtimeHours','status','notes','updatedAt'],
   Payroll: ['id','employeeId','employeeName','period','daysPresent','dailyRate','basePay','overtimeHours','overtimePay','allowance','deductions','totalPay','paidAmount','paymentMethod','cashAccount','status','notes','updatedAt']
