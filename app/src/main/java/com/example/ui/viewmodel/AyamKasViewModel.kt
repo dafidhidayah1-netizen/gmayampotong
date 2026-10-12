@@ -97,6 +97,7 @@ class AyamKasViewModel(application: Application) : AndroidViewModel(application)
     val editingTransaction = MutableStateFlow<AyamTransaction?>(null)
     val presetType = MutableStateFlow<String?>(null)
     val isPurchaseDoScreenOpen = MutableStateFlow(false)
+    val purchaseDoEditingTransaction = MutableStateFlow<AyamTransaction?>(null)
 
     private val _userMessage = MutableSharedFlow<String>()
     val userMessage = _userMessage.asSharedFlow()
@@ -339,8 +340,8 @@ class AyamKasViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun openForm(tx: AyamTransaction? = null, kind: String? = null) {
-        if (tx == null && kind == "purchase") {
-            openPurchaseDoScreen()
+        if ((tx == null && kind == "purchase") || tx?.type == "purchase") {
+            openPurchaseDoScreen(tx)
             return
         }
         editingTransaction.value = tx
@@ -348,15 +349,17 @@ class AyamKasViewModel(application: Application) : AndroidViewModel(application)
         isFormOpen.value = true
     }
 
-    fun openPurchaseDoScreen() {
+    fun openPurchaseDoScreen(transaction: AyamTransaction? = null) {
         isFormOpen.value = false
         editingTransaction.value = null
         presetType.value = null
+        purchaseDoEditingTransaction.value = transaction
         isPurchaseDoScreenOpen.value = true
     }
 
     fun closePurchaseDoScreen() {
         isPurchaseDoScreenOpen.value = false
+        purchaseDoEditingTransaction.value = null
     }
 
     fun savePurchaseDo(
@@ -375,7 +378,8 @@ class AyamKasViewModel(application: Application) : AndroidViewModel(application)
         feedPricePerKg: Double?,
         processingCost: Double,
         notes: String,
-        confirmed: Boolean
+        confirmed: Boolean,
+        editingId: String? = null
     ) {
         val invalid = when {
             date.isBlank() -> "Tanggal pembelian wajib diisi"
@@ -399,12 +403,12 @@ class AyamKasViewModel(application: Application) : AndroidViewModel(application)
             viewModelScope.launch { _userMessage.emit(invalid) }
             return
         }
-        if (allTransactions.value.any { it.type == "purchase" && it.ref.trim().equals(doNumber.trim(), ignoreCase = true) }) {
+        if (allTransactions.value.any { it.id != editingId && it.type == "purchase" && it.ref.trim().equals(doNumber.trim(), ignoreCase = true) }) {
             viewModelScope.launch { _userMessage.emit("Nomor DO sudah digunakan. Gunakan referensi unik untuk setiap pengiriman fisik.") }
             return
         }
         saveTransaction(
-            id = null,
+            id = editingId,
             date = date,
             ref = doNumber,
             type = "purchase",
