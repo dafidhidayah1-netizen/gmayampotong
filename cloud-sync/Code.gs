@@ -403,7 +403,7 @@ function refreshAyamKasReports() {
   });
   if (warnings.length) {
     ['Level','Kategori','ID Transaksi','Tanggal','Referensi','Peringatan'].forEach(function(header,i) {
-      val.getRange(2,valCols[header],warnings.length,1).setValues(warnings.map(function(row){return [row[i];}));
+      val.getRange(2,valCols[header],warnings.length,1).setValues(warnings.map(function(row){return [row[i]];}));
     });
   }
 
