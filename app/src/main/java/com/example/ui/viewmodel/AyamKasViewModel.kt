@@ -115,7 +115,8 @@ class AyamKasViewModel(application: Application) : AndroidViewModel(application)
         )
 
         viewModelScope.launch {
-            repository.ensureSeededInitialData()
+            // Never preload historical transactions silently. New installations start empty;
+            // records enter only through explicit user entry or restore/import.
             if (autoSyncEnabled.value && cloudUrl.value.isNotBlank() && cloudApiKey.value.isNotBlank()) {
                 delay(900)
                 performCloudSync()
@@ -498,7 +499,7 @@ class AyamKasViewModel(application: Application) : AndroidViewModel(application)
             }
         }
         viewModelScope.launch {
-            val txId = id?.ifBlank { null } ?: "TX-${System.currentTimeMillis()}"
+            val txId = id?.ifBlank { null } ?: "TX-${java.util.UUID.randomUUID()}"
             val existing = allTransactions.value.firstOrNull { it.id == txId }
             val tx = AyamTransaction(
                 id = txId,
@@ -534,32 +535,42 @@ class AyamKasViewModel(application: Application) : AndroidViewModel(application)
     fun toggleConfirm(tx: AyamTransaction) {
         viewModelScope.launch {
             if (tx.isConfirmed) {
-                repository.toggleConfirm(tx.id, tx.status)
-                scheduleAutoSync()
-                _userMessage.emit("Transaksi kembali menjadi Draf")
-            } else {
-                if (tx.paidAmount == null) {
-                    _userMessage.emit("Isi nominal pembayaran terlebih dahulu untuk memverifikasi")
-                    openForm(tx)
-                    return@launch
-                }
-                repository.toggleConfirm(tx.id, tx.status)
-                scheduleAutoSync()
-                _userMessage.emit("Transaksi terverifikasi dan masuk ke laporan")
+                runCatching { repository.toggleConfirm(tx.id, tx.status) }
+                    .onSuccess {
+                        scheduleAutoSync()
+                        _userMessage.emit("Transaksi kembali menjadi Draf")
+                    }
+                    .onFailure { _userMessage.emit(it.message ?: "Status transaksi gagal diubah") }
+                return@launch
             }
+            if (tx.paidAmount == null && tx.type in listOf("sale", "purchase", "expense")) {
+                _userMessage.emit("Isi jumlah yang benar-benar dibayar/diterima. Gunakan Rp0 untuk kredit, bukan membiarkannya kosong.")
+                openForm(tx)
+                return@launch
+            }
+            runCatching { repository.confirmTransaction(tx.id) }
+                .onSuccess {
+                    scheduleAutoSync()
+                    _userMessage.emit("Transaksi lolos validasi dan masuk ke laporan")
+                }
+                .onFailure { _userMessage.emit("Belum dapat diverifikasi: ${it.message ?: "periksa data transaksi"}") }
         }
     }
 
     fun confirmAllDrafts() {
         viewModelScope.launch {
             val drafts = allTransactions.value.filter { it.isDraft }
-            drafts.forEach { t ->
-                // Ensure paidAmount is filled if null
-                val updated = if (t.paidAmount == null) t.copy(paidAmount = t.amount, status = "confirmed") else t.copy(status = "confirmed")
-                repository.saveTransaction(updated)
+            var confirmed = 0
+            var skipped = 0
+            drafts.forEach { tx ->
+                // Confirmation validates each record independently. It never fills missing
+                // payments with the transaction amount and never bypasses DO/HPP checks.
+                runCatching { repository.confirmTransaction(tx.id) }
+                    .onSuccess { confirmed++ }
+                    .onFailure { skipped++ }
             }
-            scheduleAutoSync()
-            _userMessage.emit("${drafts.size} catatan berhasil diverifikasi")
+            if (confirmed > 0) scheduleAutoSync()
+            _userMessage.emit("Verifikasi massal: $confirmed berhasil, $skipped dilewati karena data belum lengkap. Buka dan perbaiki tiap transaksi yang tertunda.")
         }
     }
 
