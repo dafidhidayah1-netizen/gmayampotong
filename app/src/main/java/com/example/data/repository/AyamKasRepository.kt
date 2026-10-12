@@ -182,6 +182,7 @@ class AyamKasRepository(
                     amount = tx.amount,
                     paidAmount = tx.paidAmount,
                     qtyKg = tx.qtyKg,
+                    saleableKg = tx.saleableKg,
                     batchRef = tx.batchRef,
                     notes = tx.notes,
                     status = tx.status,
