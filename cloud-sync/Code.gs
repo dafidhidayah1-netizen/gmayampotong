@@ -54,6 +54,61 @@ function doPost(e) {
   }
 }
 
+/**
+ * Two-way sync safety for edits made directly in the spreadsheet UI.
+ * Business-field edits become drafts and receive a fresh timestamp so Android
+ * can pull the edit. The user must explicitly set status=confirmed after review.
+ * Edits performed by the Apps Script sync API do not fire this simple trigger.
+ */
+function onEdit(e) {
+  if (!e || !e.range) return;
+  const sh = e.range.getSheet();
+  if (sh.getName() !== 'Transaksi' || e.range.getRow() < 2) return;
+
+  const cols = columnMap_(sh);
+  const firstCol = e.range.getColumn();
+  const lastCol = firstCol + e.range.getNumColumns() - 1;
+  const touches = function(name) {
+    return cols[name] >= firstCol && cols[name] <= lastCol;
+  };
+  const businessFields = ['date','ref','type','category','description','amount','paidAmount','qtyKg','batchRef','notes'];
+  const businessEdit = businessFields.some(touches);
+  const statusEdit = touches('status');
+  const deletedEdit = touches('deleted');
+  if (!businessEdit && !statusEdit && !deletedEdit) return;
+
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const firstRow = e.range.getRow();
+    const lastRow = firstRow + e.range.getNumRows() - 1;
+    const now = new Date().toISOString();
+    for (let row = firstRow; row <= lastRow; row++) {
+      const deletedCell = sh.getRange(row, cols.deleted);
+      const isDeleted = deletedCell.getValue() === true ||
+        String(deletedCell.getValue()).toLowerCase() === 'true';
+      if (deletedEdit) {
+        if (isDeleted) {
+          sh.getRange(row, cols.deletedAt).setValue(now);
+        } else {
+          sh.getRange(row, cols.deletedAt).clearContent();
+          sh.getRange(row, cols.status).setValue('draft');
+        }
+      } else if (isDeleted) {
+        // Do not accidentally resurrect or timestamp-edit a deleted tombstone.
+        continue;
+      }
+      sh.getRange(row, cols.updatedAt).setValue(now);
+      sh.getRange(row, cols.source).setValue('sheets');
+      if (businessEdit && !deletedEdit) sh.getRange(row, cols.status).setValue('draft');
+    }
+    applyCashFormulas_();
+    refreshAyamKasReports();
+  } finally {
+    lock.releaseLock();
+  }
+}
+
 function setupAyamKasPro() {
   ensureTables_();
   refreshAyamKasReports();
