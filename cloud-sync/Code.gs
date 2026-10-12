@@ -71,7 +71,11 @@ function doPost(e) {
 function onEdit(e) {
   if (!e || !e.range) return;
   const sh = e.range.getSheet();
-  if (sh.getName() !== 'Transaksi' || e.range.getRow() < 2) return;
+  if (e.range.getRow() < 2) return;
+  if (sh.getName() !== 'Transaksi') {
+    handleAuxSheetEdit_(sh,e);
+    return;
+  }
 
   const cols = columnMap_(sh);
   const firstCol = e.range.getColumn();
@@ -128,6 +132,58 @@ function onEdit(e) {
     }
     applyCashFormulas_();
     refreshAyamKasReports();
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function handleAuxSheetEdit_(sh,e) {
+  const profiles = {
+    KasTransfer: {required:['date','fromAccount','toAccount','amount'],draftStatus:true},
+    PinjamanLuar: {required:['date','party','loanType','direction','amount','cashAccount'],draftStatus:true},
+    Karyawan: {required:['name','position','dailyRate'],draftStatus:false},
+    Absensi: {required:['employeeId','employeeName','workDate','status'],draftStatus:false},
+    Payroll: {required:['employeeId','employeeName','period','totalPay'],draftStatus:true}
+  };
+  const profile=profiles[sh.getName()];
+  // KasTransaksi is a generated mirror; edit its source in Transaksi or PinjamanLuar instead.
+  if (!profile) return;
+  const cols=columnMap_(sh);
+  const firstCol=e.range.getColumn(), lastCol=firstCol+e.range.getNumColumns()-1;
+  const editedHeaders=Object.keys(cols).filter(function(header){
+    return cols[header]>=firstCol && cols[header]<=lastCol;
+  });
+  if (!editedHeaders.some(function(header){return header!=='id' && header!=='updatedAt';})) return;
+  const lock=LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const firstRow=e.range.getRow(), lastRow=firstRow+e.range.getNumRows()-1;
+    const now=new Date().toISOString();
+    for(let row=firstRow;row<=lastRow;row++) {
+      const values={};
+      profile.required.forEach(function(header){values[header]=sh.getRange(row,cols[header]).getValue();});
+      const ready=profile.required.every(function(header){
+        const value=values[header];
+        return value!=='' && value!==null && value!==undefined &&
+          (header!=='amount' && header!=='dailyRate' && header!=='totalPay' || Number.isFinite(Number(value)) && Number(value)>0);
+      });
+      const idCell=sh.getRange(row,cols.id);
+      if(!String(idCell.getDisplayValue()||'').trim()) {
+        if(!ready) continue;
+        idCell.setValue(Utilities.getUuid());
+        if(profile.draftStatus && cols.status && !String(sh.getRange(row,cols.status).getValue()||'').trim()) {
+          sh.getRange(row,cols.status).setValue(sh.getName()==='Payroll'?'DRAFT':'draft');
+        }
+        if(sh.getName()==='Karyawan' && !String(sh.getRange(row,cols.active).getValue()||'').trim()) {
+          sh.getRange(row,cols.active).setValue(true);
+        }
+      }
+      if(profile.draftStatus && cols.status && editedHeaders.some(function(header){return header!=='status';})) {
+        sh.getRange(row,cols.status).setValue(sh.getName()==='Payroll'?'DRAFT':'draft');
+      }
+      sh.getRange(row,cols.updatedAt).setValue(now);
+      if(!ready) continue;
+    }
   } finally {
     lock.releaseLock();
   }
