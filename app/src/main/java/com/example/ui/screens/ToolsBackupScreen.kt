@@ -27,6 +27,8 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Divider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -36,6 +38,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -46,6 +49,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.model.AyamKasFormatters
@@ -58,8 +62,26 @@ fun ToolsBackupScreen(
     onResetData: () -> Unit,
     onRestoreDefaultDrafts: () -> Unit,
     onShareWhatsApp: () -> Unit,
+    cloudUrl: String,
+    cloudApiKey: String,
+    autoSync: Boolean,
+    isCloudSyncing: Boolean,
+    cloudStatus: String,
+    lastCloudSyncAt: String,
+    localTransactionCount: Int,
+    draftTransactionCount: Int,
+    onSaveCloudSettings: (String, String, Boolean) -> Unit,
+    onSyncNow: (String, String, Boolean) -> Unit,
+    onBackupToDrive: (String, String) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    var cloudUrlInput by remember { mutableStateOf(cloudUrl) }
+    var cloudKeyInput by remember { mutableStateOf(cloudApiKey) }
+    var autoSyncInput by remember { mutableStateOf(autoSync) }
+    LaunchedEffect(cloudUrl) { cloudUrlInput = cloudUrl }
+    LaunchedEffect(cloudApiKey) { cloudKeyInput = cloudApiKey }
+    LaunchedEffect(autoSync) { autoSyncInput = autoSync }
+
     var showImportDialog by remember { mutableStateOf(false) }
     var importJsonText by remember { mutableStateOf("") }
 
@@ -107,6 +129,120 @@ fun ToolsBackupScreen(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+        }
+
+        // Cloud sync panel: connects local Room data to the bound Google Sheets ledger.
+        item {
+            Card(
+                modifier = Modifier.fillMaxWidth().testTag("cloud_sync_panel"),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+            ) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Surface(
+                            color = Color(0xFFE3F4EB),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.size(38.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Default.FileUpload,
+                                    contentDescription = null,
+                                    tint = Color(0xFF176B50),
+                                    modifier = Modifier.size(21.dp)
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Sinkronisasi Google Sheets & Drive", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+                            Text("Database lokal tetap dipakai saat offline", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                    Text(
+                        "Masukkan URL Web App Apps Script (/exec) dan kunci yang dibuat melalui menu AyamKas Pro pada spreadsheet.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    OutlinedTextField(
+                        value = cloudUrlInput,
+                        onValueChange = { cloudUrlInput = it },
+                        label = { Text("URL Web App Google Apps Script") },
+                        placeholder = { Text("https://script.google.com/macros/s/.../exec") },
+                        modifier = Modifier.fillMaxWidth().testTag("input_cloud_url"),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+                        singleLine = true
+                    )
+                    OutlinedTextField(
+                        value = cloudKeyInput,
+                        onValueChange = { cloudKeyInput = it },
+                        label = { Text("Kunci sinkronisasi") },
+                        visualTransformation = PasswordVisualTransformation(),
+                        modifier = Modifier.fillMaxWidth().testTag("input_cloud_key"),
+                        singleLine = true
+                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Sinkron otomatis", fontWeight = FontWeight.SemiBold)
+                            Text("Saat ada perubahan dan aplikasi sedang terbuka/online", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+                        }
+                        Switch(
+                            checked = autoSyncInput,
+                            onCheckedChange = { autoSyncInput = it },
+                            modifier = Modifier.testTag("switch_cloud_auto_sync")
+                        )
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                        OutlinedButton(
+                            onClick = { onSaveCloudSettings(cloudUrlInput, cloudKeyInput, autoSyncInput) },
+                            modifier = Modifier.weight(1f)
+                        ) { Text("Simpan URL") }
+                        Button(
+                            onClick = { onSyncNow(cloudUrlInput, cloudKeyInput, autoSyncInput) },
+                            enabled = !isCloudSyncing,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            if (isCloudSyncing) {
+                                CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                                Spacer(modifier = Modifier.width(8.dp))
+                            }
+                            Text("Sinkronkan Sekarang")
+                        }
+                    }
+                    OutlinedButton(
+                        onClick = { onBackupToDrive(cloudUrlInput, cloudKeyInput) },
+                        enabled = !isCloudSyncing,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Default.FileDownload, contentDescription = null)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Cadangkan Spreadsheet ke Drive")
+                    }
+                    Surface(
+                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text("Status: $cloudStatus", fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodySmall)
+                            if (lastCloudSyncAt.isNotBlank()) Text("Sinkronisasi terakhir: $lastCloudSyncAt", style = MaterialTheme.typography.bodySmall)
+                            Text("Data di HP: $localTransactionCount transaksi · $draftTransactionCount masih draf", style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                    Text(
+                        "Catatan: backup Drive menyalin spreadsheet saja. Gunakan Ekspor JSON di bawah untuk cadangan lokal HP. Jika jaringan gagal, data lokal tidak dihapus.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        "Jaga kerahasiaan kunci API. Untuk penggunaan banyak orang atau data yang sangat sensitif, deployment perlu autentikasi Google yang lebih ketat.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+            }
         }
 
         // Section: Poultry Slaughter & Carcass HPP Calculator
