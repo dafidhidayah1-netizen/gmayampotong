@@ -1,7 +1,7 @@
 # AyamKas Pro — Integrasi cloud dan alur pembukuan
 
 ## Apa yang ada di cabang ini
-- `Code.gs`: backend Google Apps Script untuk transaksi, ringkasan formula, karyawan, absensi, penggajian, audit log, arsip soft-delete, sinkronisasi berdasarkan ID + timestamp, dan backup spreadsheet.
+- `Code.gs`: backend Google Apps Script untuk transaksi, ringkasan formula, karyawan, absensi, penggajian, audit log, arsip soft-delete, sinkronisasi berdasarkan ID + timestamp, dan backup spreadsheet. Untuk keamanan pemasangan, data baru disimpan pada tab khusus berawalan `AKP_`: `AKP_Transaksi`, `AKP_Ringkasan`, `AKP_Karyawan`, `AKP_Absensi`, `AKP_Penggajian`, dan `AKP_AuditLog`.
 - `Index.html`: panel admin web yang membaca dan menulis langsung ke spreadsheet aktif.
 - Aplikasi Android native tetap memakai Room sebagai penyimpanan lokal; integrasi Android ke backend harus dikonfigurasi setelah backend dideploy.
 
@@ -25,7 +25,7 @@
 ## Batasan yang harus diketahui
 - GitHub tidak dapat otomatis menghubungkan atau men-deploy ke akun Google Anda. Pemasangan dan izin di akun pemilik tetap diperlukan.
 - HPP/stok dihitung dari formula batch. Validasi pada data uji yang diketahui benar sebelum dipakai secara operasional.
-- Piutang dan utang yang ditampilkan masih berupa estimasi agregat. Umur saldo, jatuh tempo, dan saldo per pelanggan/supplier memerlukan modul invoice serta pembayaran yang tertaut ke invoice/DO.
+- Piutang pelanggan dan utang DO masih berupa estimasi agregat, bukan sub-ledger per faktur. Gaji yang disetujui menghasilkan biaya gaji dalam transaksi; utang gaji belum disertakan ke angka agregat utang supplier. Umur saldo, jatuh tempo, dan saldo per pelanggan/supplier memerlukan modul invoice serta pembayaran yang tertaut ke invoice/DO.
 - Payroll memakai absensi tercatat untuk hari hadir dan jam lembur, lalu membuat pengeluaran gaji tertaut ke buku transaksi saat disetujui. Sistem tidak otomatis menetapkan kewajiban BPJS, PPh 21 atau semua ketentuan ketenagakerjaan.
 - Backup menyalin spreadsheet, bukan data lokal Android.
 - Jangan menganggap status koneksi saja sebagai bukti berhasil. Verifikasi respons API, ID transaksi, waktu sync, nilai sheet dan rekonsiliasi kas fisik.
