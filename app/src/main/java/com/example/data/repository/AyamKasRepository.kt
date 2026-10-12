@@ -18,7 +18,9 @@ data class CloudSyncStats(
     val serverAccepted: Int,
     val pulled: Int,
     val totalOnServer: Int,
-    val spreadsheetId: String
+    val spreadsheetId: String,
+    val conflicts: Int = 0,
+    val rejected: Int = 0
 )
 
 class AyamKasRepository(
@@ -86,7 +88,9 @@ class AyamKasRepository(
             serverAccepted = response.accepted,
             pulled = pulled,
             totalOnServer = response.transactions.size,
-            spreadsheetId = response.spreadsheetId
+            spreadsheetId = response.spreadsheetId,
+            conflicts = response.conflicts.size,
+            rejected = response.rejectedCount
         )
     }
 
