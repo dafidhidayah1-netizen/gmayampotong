@@ -38,12 +38,14 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import com.example.data.model.AyamTransaction
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
 @Composable
 fun PurchaseDoScreen(
+    initialTransaction: AyamTransaction? = null,
     onCancel: () -> Unit,
     onSave: (
         date: String,
@@ -61,26 +63,27 @@ fun PurchaseDoScreen(
         feedPricePerKg: Double?,
         processingCost: Double,
         notes: String,
-        confirmed: Boolean
+        confirmed: Boolean,
+        editingId: String?
     ) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    var date by remember { mutableStateOf(SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())) }
-    var doNumber by remember { mutableStateOf("") }
-    var quantity by remember { mutableStateOf("") }
-    var supplier by remember { mutableStateOf("") }
-    var totalPrice by remember { mutableStateOf("") }
-    var paidNow by remember { mutableStateOf("") }
-    var weightLoss by remember { mutableStateOf("") }
-    var mortalityRate by remember { mutableStateOf("") }
-    var fcr by remember { mutableStateOf("") }
-    var weightGain by remember { mutableStateOf("") }
-    var feedPrice by remember { mutableStateOf("") }
-    var processingCost by remember { mutableStateOf("") }
-    var notes by remember { mutableStateOf("") }
-    var method by remember { mutableStateOf("CASH") }
-    var account by remember { mutableStateOf("DOMPET") }
-    var confirmed by remember { mutableStateOf(false) }
+    var date by remember(initialTransaction?.id) { mutableStateOf(initialTransaction?.date ?: SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())) }
+    var doNumber by remember(initialTransaction?.id) { mutableStateOf(initialTransaction?.ref ?: "") }
+    var quantity by remember(initialTransaction?.id) { mutableStateOf(initialTransaction?.qtyKg?.toString() ?: "") }
+    var supplier by remember(initialTransaction?.id) { mutableStateOf(initialTransaction?.supplier ?: "") }
+    var totalPrice by remember(initialTransaction?.id) { mutableStateOf(initialTransaction?.amount?.toLong()?.toString() ?: "") }
+    var paidNow by remember(initialTransaction?.id) { mutableStateOf(initialTransaction?.paidAmount?.toLong()?.toString() ?: "") }
+    var weightLoss by remember(initialTransaction?.id) { mutableStateOf(initialTransaction?.weightLossKg?.toString() ?: "") }
+    var mortalityRate by remember(initialTransaction?.id) { mutableStateOf(initialTransaction?.mortalityRatePct?.toString() ?: "") }
+    var fcr by remember(initialTransaction?.id) { mutableStateOf(initialTransaction?.fcr?.toString() ?: "") }
+    var weightGain by remember(initialTransaction?.id) { mutableStateOf(initialTransaction?.weightGainKg?.toString() ?: "") }
+    var feedPrice by remember(initialTransaction?.id) { mutableStateOf(initialTransaction?.feedPricePerKg?.toLong()?.toString() ?: "") }
+    var processingCost by remember(initialTransaction?.id) { mutableStateOf(initialTransaction?.processingCost?.toLong()?.toString() ?: "0") }
+    var notes by remember(initialTransaction?.id) { mutableStateOf(initialTransaction?.notes ?: "") }
+    var method by remember(initialTransaction?.id) { mutableStateOf(initialTransaction?.paymentMethod ?: "CASH") }
+    var account by remember(initialTransaction?.id) { mutableStateOf(initialTransaction?.cashAccount ?: "DOMPET") }
+    var confirmed by remember(initialTransaction?.id) { mutableStateOf(initialTransaction?.isConfirmed ?: false) }
     var menuMethod by remember { mutableStateOf(false) }
     var menuAccount by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf("") }
@@ -97,8 +100,8 @@ fun PurchaseDoScreen(
             }
             Spacer(Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
-                Text("Pembelian DO Ayam", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                Text("Catat berdasarkan DO/faktur sebenarnya; tersimpan ke database lokal.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(if (initialTransaction == null) "Pembelian DO Ayam" else "Edit Pembelian DO Ayam", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                Text(if (initialTransaction == null) "Catat berdasarkan DO/faktur sebenarnya; tersimpan ke database lokal." else "Perbaiki data dari DO yang sudah ada. Referensi tetap dipertahankan agar tautan penjualan tidak putus.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Icon(Icons.Default.Inventory2, contentDescription = "Pembelian DO", tint = MaterialTheme.colorScheme.primary)
         }
@@ -247,10 +250,10 @@ fun PurchaseDoScreen(
                     else -> ""
                 }
                 if (error.isBlank()) {
-                    onSave(date, doNumber.trim(), qty!!, supplier.trim(), price!!, paid!!, method, account, loss!!, death!!, fcrValue, gain, feed, process!!, notes.trim(), confirmed)
+                    onSave(date, doNumber.trim(), qty!!, supplier.trim(), price!!, paid!!, method, account, loss!!, death!!, fcrValue, gain, feed, process!!, notes.trim(), confirmed, initialTransaction?.id)
                 }
             }, modifier = Modifier.weight(1f).testTag("btn_save_purchase_do")) {
-                Text("Simpan DO")
+                Text(if (initialTransaction == null) "Simpan DO" else "Simpan Perubahan DO")
             }
         }
         Spacer(Modifier.height(24.dp))
