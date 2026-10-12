@@ -80,6 +80,24 @@ fun FinanceScreen(
 
     val accounts = listOf("DOMPET", "ATM/BANK", "QRIS")
     val balanceTotal = cashBalances.values.sum()
+    val loanPositionRows = loans
+        .filter { it.status == "confirmed" && it.loanReference.isNotBlank() }
+        .groupBy { it.loanReference.trim() }
+        .map { (reference, records) ->
+            val liabilityPrincipal = records.filter {
+                it.loanType in listOf("OWNER_LOAN", "BUSINESS_BORROWING") && it.direction == "RECEIVED"
+            }.sumOf { it.amount }
+            val liabilityPaid = records.filter {
+                it.loanType in listOf("OWNER_LOAN", "BUSINESS_BORROWING") && it.direction == "REPAYMENT"
+            }.sumOf { it.amount }
+            val receivablePrincipal = records.filter {
+                it.loanType == "BUSINESS_LENDING" && it.direction == "GIVEN"
+            }.sumOf { it.amount }
+            val receivableCollected = records.filter {
+                it.loanType == "BUSINESS_LENDING" && it.direction == "COLLECTION"
+            }.sumOf { it.amount }
+            Triple(reference, (liabilityPrincipal - liabilityPaid).coerceAtLeast(0.0), (receivablePrincipal - receivableCollected).coerceAtLeast(0.0))
+        }.filter { it.second > 0.0 || it.third > 0.0 }
 
     LazyColumn(
         modifier = modifier.fillMaxSize().padding(horizontal = 16.dp).testTag("finance_screen"),
@@ -195,6 +213,25 @@ fun FinanceScreen(
                             party = ""; loanReference = ""; loanAmount = ""; dueDate = ""; loanNotes = ""
                         }
                     }, modifier = Modifier.fillMaxWidth().testTag("btn_save_loan")) { Text("Simpan Catatan Kas") }
+                }
+            }
+        }
+        item {
+            Card(shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+                Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Sisa Pinjaman per Referensi", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Text("Saldo hanya dihitung dari peristiwa kas berstatus confirmed dan referensi yang sama.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    if (loanPositionRows.isEmpty()) {
+                        Text("Belum ada saldo pinjaman terverifikasi yang tertaut ke referensi.", style = MaterialTheme.typography.bodySmall)
+                    } else {
+                        loanPositionRows.forEach { row ->
+                            Column(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                Text(row.first, fontWeight = FontWeight.SemiBold)
+                                if (row.second > 0.0) Text("Utang pinjaman usaha/owner: ${AyamKasFormatters.formatRupiah(row.second)}", style = MaterialTheme.typography.bodySmall)
+                                if (row.third > 0.0) Text("Piutang pinjaman ke pihak lain: ${AyamKasFormatters.formatRupiah(row.third)}", style = MaterialTheme.typography.bodySmall)
+                            }
+                        }
+                    }
                 }
             }
         }
