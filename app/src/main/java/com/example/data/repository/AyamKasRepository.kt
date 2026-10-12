@@ -52,7 +52,7 @@ class AyamKasRepository(
     ): CloudSyncStats {
         val initialLocal = dao.getAllTransactions().first()
         val localTransactions = initialLocal.map { tx ->
-            if (tx.updatedAt.isBlank()) tx.copy(updatedAt = nowIso()).also {
+            if (tx.updatedAt.isBlank()) tx.copy(updatedAt = "1970-01-01T00:00:00.000Z").also {
                 dao.insertTransaction(it)
             } else tx
         }
