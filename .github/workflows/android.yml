@@ -18,6 +18,18 @@ jobs:
       - name: Checkout source
         uses: actions/checkout@v6
 
+      - name: Validate Apps Script and web UI syntax
+        run: |
+          node --check < integrasi-google-sheets-nyata/Code.gs
+          node <<'NODE'
+          const fs = require('fs');
+          const html = fs.readFileSync('integrasi-google-sheets-nyata/Index.html', 'utf8');
+          const match = html.match(/<script>([\\s\\S]*?)<\\/script>/i);
+          if (!match) throw new Error('No inline web application script was found.');
+          new Function(match[1]);
+          console.log('Apps Script and web UI JavaScript syntax are valid.');
+          NODE
+
       - name: Set up JDK 17
         uses: actions/setup-java@v5
         with:
