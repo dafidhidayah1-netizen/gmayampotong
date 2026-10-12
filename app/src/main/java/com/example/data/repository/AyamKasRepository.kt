@@ -122,16 +122,31 @@ class AyamKasRepository(
     suspend fun saveEmployee(employee: EmployeeRecord) {
         require(employee.name.isNotBlank()) { "Nama karyawan wajib diisi" }
         require(employee.dailyRate >= 0.0) { "Tarif harian tidak boleh negatif" }
+        require(employee.standardHoursPerShift > 0.0) { "Jam kerja standar per shift harus lebih dari nol" }
+        require(employee.overtimeRatePerHour >= 0.0) { "Tarif lembur tidak boleh negatif" }
         businessDao.saveEmployee(employee.copy(updatedAt = nowIso()))
     }
 
     suspend fun saveAttendance(record: AttendanceRecord) {
         require(record.employeeId.isNotBlank() && record.workDate.isNotBlank()) { "Karyawan dan tanggal wajib diisi" }
-        if (record.status == "PRESENT") {
+        require(record.breakMinutes >= 0) { "Durasi istirahat tidak valid" }
+        val employee = businessDao.getEmployee(record.employeeId)
+            ?: throw IllegalArgumentException("Data karyawan tidak ditemukan")
+        val overtime = if (record.status == "PRESENT") {
             require(record.clockIn.isNotBlank() && record.clockOut.isNotBlank()) { "Jam masuk dan keluar wajib diisi untuk status hadir" }
-        }
-        require(record.overtimeHours >= 0.0 && record.breakMinutes >= 0) { "Jam lembur dan istirahat tidak valid" }
-        businessDao.saveAttendance(record.copy(updatedAt = nowIso()))
+            val workedHours = calculateWorkedHours(record.clockIn, record.clockOut, record.breakMinutes)
+            (workedHours - employee.standardHoursPerShift).coerceAtLeast(0.0)
+        } else 0.0
+        businessDao.saveAttendance(record.copy(overtimeHours = overtime, updatedAt = nowIso()))
+    }
+
+    private fun calculateWorkedHours(clockIn: String, clockOut: String, breakMinutes: Int): Double {
+        val start = java.time.LocalTime.parse(clockIn)
+        val end = java.time.LocalTime.parse(clockOut)
+        var minutes = java.time.Duration.between(start, end).toMinutes()
+        if (minutes < 0) minutes += 24 * 60 // overnight shift
+        minutes = (minutes - breakMinutes).coerceAtLeast(0)
+        return minutes / 60.0
     }
 
     suspend fun savePayroll(record: PayrollRecord) {
