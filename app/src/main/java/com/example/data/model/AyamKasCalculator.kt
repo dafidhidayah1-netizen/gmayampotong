@@ -47,7 +47,9 @@ object AyamKasCalculator {
 
         // Batch-linked costs are capitalized in the batch HPP and must not be deducted twice as overhead.
         val expenses = periodExpenses
-            .filter { it.batchRef.isBlank() }
+            .filter { expense ->
+                expense.batchRef.isBlank() || purchaseGroups[refKey(expense.batchRef)]?.size != 1
+            }
             .sumOf { it.amount }
 
         var cogs = 0.0
