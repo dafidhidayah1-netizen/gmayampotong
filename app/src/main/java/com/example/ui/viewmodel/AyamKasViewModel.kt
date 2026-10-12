@@ -301,6 +301,7 @@ class AyamKasViewModel(application: Application) : AndroidViewModel(application)
         amount: Double,
         paidAmount: Double?,
         qtyKg: Double?,
+        saleableKg: Double?,
         batchRef: String,
         notes: String,
         isConfirmed: Boolean
@@ -318,6 +319,7 @@ class AyamKasViewModel(application: Application) : AndroidViewModel(application)
                 amount = amount,
                 paidAmount = paidAmount,
                 qtyKg = qtyKg,
+                saleableKg = saleableKg,
                 batchRef = batchRef.trim(),
                 notes = notes.trim(),
                 status = if (isConfirmed) "confirmed" else "draft",
