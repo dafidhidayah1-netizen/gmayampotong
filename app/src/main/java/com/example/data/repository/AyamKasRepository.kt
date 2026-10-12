@@ -8,7 +8,6 @@ import com.example.data.model.InitialAyamData
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import com.example.data.remote.GoogleSheetsSyncClient
-import java.time.Instant
 import org.json.JSONArray
 import org.json.JSONObject
 import java.text.SimpleDateFormat
@@ -36,13 +35,13 @@ class AyamKasRepository(
     }
 
     suspend fun saveTransaction(tx: AyamTransaction) {
-        dao.insertTransaction(tx.copy(updatedAt = Instant.now().toString()))
+        dao.insertTransaction(tx.copy(updatedAt = nowIso()))
     }
 
     suspend fun toggleConfirm(id: String, currentStatus: String) {
         val current = dao.getTransactionById(id) ?: return
         val newStatus = if (currentStatus == "confirmed") "draft" else "confirmed"
-        dao.insertTransaction(current.copy(status = newStatus, updatedAt = Instant.now().toString()))
+        dao.insertTransaction(current.copy(status = newStatus, updatedAt = nowIso()))
     }
 
     /** Merge Room data with the Apps Script ledger by stable ID and update timestamp. */
@@ -53,7 +52,7 @@ class AyamKasRepository(
     ): CloudSyncStats {
         val initialLocal = dao.getAllTransactions().first()
         val localTransactions = initialLocal.map { tx ->
-            if (tx.updatedAt.isBlank()) tx.copy(updatedAt = Instant.now().toString()).also {
+            if (tx.updatedAt.isBlank()) tx.copy(updatedAt = nowIso()).also {
                 dao.insertTransaction(it)
             } else tx
         }
@@ -93,15 +92,32 @@ class AyamKasRepository(
 
     private fun timestamp(value: String): Long {
         if (value.isBlank()) return Long.MIN_VALUE
-        return try { Instant.parse(value).toEpochMilli() } catch (_: Exception) { Long.MIN_VALUE }
+        return try {
+            SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US).apply {
+                timeZone = java.util.TimeZone.getTimeZone("UTC")
+                isLenient = false
+            }.parse(value)?.time ?: Long.MIN_VALUE
+        } catch (_: Exception) {
+            try {
+                SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US).apply {
+                    timeZone = java.util.TimeZone.getTimeZone("UTC")
+                    isLenient = false
+                }.parse(value)?.time ?: Long.MIN_VALUE
+            } catch (_: Exception) { Long.MIN_VALUE }
+        }
     }
+
+    private fun nowIso(): String =
+        SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US).apply {
+            timeZone = java.util.TimeZone.getTimeZone("UTC")
+        }.format(Date())
 
     suspend fun setStatus(id: String, status: String) {
         dao.updateStatus(id, status)
     }
 
     suspend fun deleteTransaction(tx: AyamTransaction) {
-        val nowIso = Instant.now().toString()
+        val nowIso = nowIso()
         val deleted = DeletedAyamTransaction(
             id = "DEL-${System.currentTimeMillis()}",
             originalId = tx.id,
@@ -138,18 +154,18 @@ class AyamKasRepository(
             notes = deleted.notes,
             status = deleted.status,
             source = deleted.source,
-            updatedAt = Instant.now().toString()
+            updatedAt = nowIso()
         )
         dao.insertTransaction(restored)
         dao.deleteDeleted(deleted.id)
     }
 
     suspend fun clearAll() {
-        val now = Instant.now().toString()
+        val now = nowIso()
         dao.getAllTransactions().first().forEach { tx ->
             dao.insertDeleted(
                 DeletedAyamTransaction(
-                    id = "DEL-\${tx.id}",
+                    id = "DEL-${tx.id}",
                     originalId = tx.id,
                     deletedAt = now,
                     date = tx.date,
@@ -174,11 +190,11 @@ class AyamKasRepository(
         val old = dao.getAllTransactions().first()
         val defaults = InitialAyamData.REAL_TRANSACTIONS
         val defaultIds = defaults.map { it.id }.toSet()
-        val now = Instant.now().toString()
+        val now = nowIso()
         old.filterNot { it.id in defaultIds }.forEach { tx ->
             dao.insertDeleted(
                 DeletedAyamTransaction(
-                    id = "DEL-\${tx.id}",
+                    id = "DEL-${tx.id}",
                     originalId = tx.id,
                     deletedAt = now,
                     date = tx.date,
