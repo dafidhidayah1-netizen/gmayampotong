@@ -209,10 +209,10 @@ class AyamKasViewModel(application: Application) : AndroidViewModel(application)
             cloudStatus.value = "Membuat cadangan spreadsheet di Google Drive…"
             try {
                 val backup = cloudClient.backup(cloudUrl.value, cloudApiKey.value)
-                cloudStatus.value = "Cadangan spreadsheet berhasil: \${backup.name}"
-                _userMessage.emit("Cadangan tersimpan di Drive: \${backup.url}")
+                cloudStatus.value = "Cadangan spreadsheet berhasil: " + backup.name
+                _userMessage.emit("Cadangan tersimpan di Drive: " + backup.url)
             } catch (e: Exception) {
-                cloudStatus.value = "Cadangan gagal: \${e.message ?: "kesalahan koneksi"}"
+                cloudStatus.value = "Cadangan gagal: " + (e.message ?: "kesalahan koneksi")
                 _userMessage.emit(cloudStatus.value)
             } finally {
                 isCloudSyncing.value = false
@@ -260,10 +260,18 @@ class AyamKasViewModel(application: Application) : AndroidViewModel(application)
             val stamp = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale("id", "ID")).format(Date())
             lastCloudSyncAt.value = stamp
             cloudPrefs.edit().putString("lastSyncAt", stamp).apply()
-            cloudStatus.value = "Berhasil · data server \${result.totalOnServer} transaksi · ditarik \${result.pulled} · diproses server \${result.serverAccepted}"
+            val warningParts = mutableListOf<String>()
+            if (result.conflicts > 0) warningParts.add("${result.conflicts} konflik timestamp perlu ditinjau")
+            if (result.rejected > 0) warningParts.add("${result.rejected} catatan ditolak backend")
+            val details = "Data server ${result.totalOnServer} transaksi · ditarik ${result.pulled} · diproses server ${result.serverAccepted}"
+            cloudStatus.value = if (warningParts.isEmpty()) {
+                "Berhasil · $details"
+            } else {
+                "Sinkron selesai dengan peringatan: " + warningParts.joinToString(" · ") + " · " + details
+            }
             _userMessage.emit("Sinkronisasi selesai. Periksa Ringkasan dan Validasi di Google Sheets.")
         } catch (e: Exception) {
-            cloudStatus.value = "Sinkronisasi gagal: \${e.message ?: "jaringan atau izin server"}"
+            cloudStatus.value = "Sinkronisasi gagal: " + (e.message ?: "jaringan atau izin server")
             _userMessage.emit(cloudStatus.value)
         } finally {
             isCloudSyncing.value = false
