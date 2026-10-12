@@ -137,7 +137,7 @@ class GoogleSheetsSyncClient {
     }
 
     private fun ExternalLoan.toJson() = JSONObject().apply {
-        put("id", id); put("date", date); put("party", party); put("loanType", loanType)
+        put("id", id); put("date", date); put("party", party); put("loanReference", loanReference); put("loanType", loanType)
         put("direction", direction); put("amount", amount); put("paidAmount", paidAmount); put("dueDate", dueDate)
         put("cashAccount", cashAccount); put("notes", notes); put("status", status); put("updatedAt", updatedAt)
     }
@@ -249,7 +249,7 @@ class GoogleSheetsSyncClient {
         if (this == null) return emptyList()
         return buildList { for (i in 0 until length()) {
             val o=optJSONObject(i) ?: continue
-            add(ExternalLoan(o.optString("id"),o.optString("date"),o.optString("party"),o.optString("loanType"),
+            add(ExternalLoan(o.optString("id"),o.optString("date"),o.optString("party"),o.optString("loanReference"),o.optString("loanType"),
                 o.optString("direction"),o.optDouble("amount",0.0),o.optDouble("paidAmount",0.0),o.optString("dueDate"),
                 o.optString("cashAccount","ATM/BANK"),o.optString("notes"),o.optString("status","draft"),o.optString("updatedAt")))
         } }
