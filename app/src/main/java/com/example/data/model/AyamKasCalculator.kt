@@ -7,18 +7,22 @@ object AyamKasCalculator {
         filteredConfirmed: List<AyamTransaction> = allTransactions.filter { it.isConfirmed }
     ): AyamKasSummary {
         val confirmedList = filteredConfirmed
+        val allConfirmed = allTransactions.filter { it.isConfirmed }
 
         val capital = confirmedList.filter { it.type == "capital_in" }.sumOf { it.amount }
         val revenueTx = confirmedList.filter { it.type == "sale" }
         val revenue = revenueTx.sumOf { it.amount }
 
         val purchases = confirmedList.filter { it.type == "purchase" }
+        val allPurchases = allConfirmed.filter { it.type == "purchase" }
+        val allSales = allConfirmed.filter { it.type == "sale" }
         val purchaseTotal = purchases.sumOf { it.amount }
 
         val expensesTx = confirmedList.filter { it.type == "expense" }
         val expenses = expensesTx.sumOf { it.amount }
 
-        val knownPurchases = purchases
+        // Sales for this period may draw stock from DOs purchased in a previous period.
+        val knownPurchases = allPurchases
             .filter { it.ref.isNotBlank() }
             .associateBy { it.ref.trim().lowercase() }
 
@@ -29,9 +33,9 @@ object AyamKasCalculator {
         var stockValue = 0.0
         val negativeStockBatches = mutableListOf<String>()
 
-        for (p in purchases) {
+        for (p in allPurchases) {
             val pRefKey = p.ref.trim().lowercase()
-            val sold = revenueTx
+            val sold = allSales
                 .filter { it.batchRef.trim().lowercase() == pRefKey }
                 .sumOf { (it.qtyKg ?: 0.0).coerceAtLeast(0.0) }
             val kg = p.qtyKg ?: 0.0
@@ -87,7 +91,7 @@ object AyamKasCalculator {
             t.type == "sale" && (
                 (t.qtyKg == null || t.qtyKg <= 0.0) ||
                 t.batchRef.isBlank() ||
-                !purchases.any { it.ref.trim().equals(t.batchRef.trim(), ignoreCase = true) }
+                !allPurchases.any { it.ref.trim().equals(t.batchRef.trim(), ignoreCase = true) }
             )
         }
 
