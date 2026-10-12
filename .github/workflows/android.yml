@@ -24,19 +24,29 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: Set up Android SDK tools
-        uses: android-actions/setup-android@v3
-
-      # Gradle wrapper scripts/JAR are not committed in this repository.
-      # Install the exact Gradle distribution declared by gradle-wrapper.properties.
+      # This repository does not commit Gradle wrapper scripts/JAR.
       - name: Set up Gradle 9.3.1
         uses: gradle/actions/setup-gradle@v6
         with:
           gradle-version: "9.3.1"
           cache-provider: basic
 
+      - name: Add Android SDK tools to PATH
+        shell: bash
+        run: |
+          SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          SDKMANAGER="$(find "$SDK_ROOT/cmdline-tools" -type f -name sdkmanager 2>/dev/null | sort -V | tail -n 1)"
+          if [ -z "$SDKMANAGER" ]; then
+            echo "sdkmanager was not found under $SDK_ROOT/cmdline-tools"
+            exit 1
+          fi
+          echo "$(dirname "$SDKMANAGER")" >> "$GITHUB_PATH"
+          echo "$SDK_ROOT/platform-tools" >> "$GITHUB_PATH"
+          echo "Using $SDKMANAGER"
+
       - name: Install Android SDK Platform 36.1
         run: |
+          yes | sdkmanager --licenses >/dev/null
           sdkmanager --install "platforms;android-36.1" "build-tools;36.0.0" "platform-tools"
 
       # The app's debug signing config uses a root-level debug.keystore.
