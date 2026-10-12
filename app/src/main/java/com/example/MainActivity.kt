@@ -335,7 +335,7 @@ fun AyamKasApp(viewModel: AyamKasViewModel) {
             presetType = presetType,
             availablePurchaseBatches = confirmedPurchases,
             onDismiss = { viewModel.closeForm() },
-            onSave = { id, date, ref, type, category, description, amount, paidAmount, qtyKg, batchRef, notes, isConfirmed ->
+            onSave = { id, date, ref, type, category, description, amount, paidAmount, qtyKg, saleableKg, batchRef, notes, isConfirmed ->
                 viewModel.saveTransaction(
                     id = id,
                     date = date,
@@ -346,6 +346,7 @@ fun AyamKasApp(viewModel: AyamKasViewModel) {
                     amount = amount,
                     paidAmount = paidAmount,
                     qtyKg = qtyKg,
+                    saleableKg = saleableKg,
                     batchRef = batchRef,
                     notes = notes,
                     isConfirmed = isConfirmed
