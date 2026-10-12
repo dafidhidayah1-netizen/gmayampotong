@@ -46,7 +46,8 @@ data class ExternalLoan(
     @PrimaryKey val id: String,
     val date: String,
     val party: String,
-    val loanType: String, // OWNER_LOAN, BUSINESS_BORROWING, OWNER_PERSONAL, BUSINESS_ADVANCE
+    @androidx.room.ColumnInfo(defaultValue = "''") val loanReference: String,
+    val loanType: String, // OWNER_LOAN, BUSINESS_BORROWING, BUSINESS_LENDING, OWNER_PERSONAL, OWNER_INJECTION, UNEXPECTED_COST
     val direction: String, // RECEIVED, REPAYMENT, GIVEN, COLLECTION
     val amount: Double,
     val paidAmount: Double,
