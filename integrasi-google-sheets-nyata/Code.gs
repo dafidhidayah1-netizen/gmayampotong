@@ -542,6 +542,11 @@ function recalculate_() {
   const type = L('jenis'), amount = L('nominal'), qty = L('qtyKg'), output = L('kgSiapJual');
   const batch = L('batchRef'), ref = L('referensi'), status = L('status'), deleted = L('deleted');
   const hppUnit = L('hppPerKg'), hppSale = L('hppJual'), gross = L('labaKotor'), stock = L('kgSisa'), hppStatus = L('statusHpp');
+  const unitFormulas = [];
+  const saleFormulas = [];
+  const grossFormulas = [];
+  const stockFormulas = [];
+  const statusFormulas = [];
   for (let row=2; row<=lastRow; row++) {
     const amountCell = amount+row, typeCell = type+row, qtyCell=qty+row, outputCell=output+row;
     const batchCell=batch+row, refCell=ref+row, statusCell=status+row, deletedCell=deleted+row;
@@ -551,12 +556,19 @@ function recalculate_() {
     const stockFormula = '=IF(AND('+typeCell+'="purchase",'+statusCell+'="confirmed",'+deletedCell+'<>TRUE),IF('+outputCell+'>0,'+outputCell+','+qtyCell+')-SUMIFS($'+qty+'$2:$'+qty+',$'+type+'$2:$'+type+',"sale",$'+batch+'$2:$'+batch+','+refCell+',$'+status+'$2:$'+status+',"confirmed",$'+deleted+'$2:$'+deleted+',"<>TRUE"),"")';
     const purchaseRefCount = 'COUNTIFS($'+type+'$2:$'+type+',"purchase",$'+ref+'$2:$'+ref+','+refCell+',$'+status+'$2:$'+status+',"confirmed",$'+deleted+'$2:$'+deleted+',"<>TRUE")';
     const statusFormula = '=IF('+deletedCell+'=TRUE,"DIARSIPKAN",IF('+statusCell+'<>"confirmed","DRAF",IF('+typeCell+'="purchase",IF('+refCell+'="","REF DO KOSONG",IF('+purchaseRefCount+'>1,"REF DO GANDA",IF('+hppUnit+row+'<=0,"HPP BELUM LENGKAP",IF('+stock+row+'<0,"STOK MINUS",IF('+outputCell+'="","ASUMSI KG MASUK","OK"))))),IF('+typeCell+'="sale",IF(OR('+qtyCell+'<=0,'+batchCell+'="",'+hppSale+row+'<=0),"HPP BELUM LENGKAP","OK"),IF(AND('+typeCell+'="expense",'+batchCell+'<>"",COUNTIFS($'+type+'$2:$'+type+',"purchase",$'+ref+'$2:$'+ref+','+batchCell+',$'+status+'$2:$'+status+',"confirmed",$'+deleted+'$2:$'+deleted+',"<>TRUE")<>1),"BIAYA BATCH TANPA DO","OK")))))';
-    sh.getRange(row,idx.hppPerKg).setFormula(unitFormula);
-    sh.getRange(row,idx.hppJual).setFormula(saleFormula);
-    sh.getRange(row,idx.labaKotor).setFormula(grossFormula);
-    sh.getRange(row,idx.kgSisa).setFormula(stockFormula);
-    sh.getRange(row,idx.statusHpp).setFormula(statusFormula);
+    unitFormulas.push([unitFormula]);
+    saleFormulas.push([saleFormula]);
+    grossFormulas.push([grossFormula]);
+    stockFormulas.push([stockFormula]);
+    statusFormulas.push([statusFormula]);
   }
+  const formulaRowCount = lastRow - 1;
+  sh.getRange(2,idx.hppPerKg,formulaRowCount,1).setFormulas(unitFormulas);
+  sh.getRange(2,idx.hppJual,formulaRowCount,1).setFormulas(saleFormulas);
+  sh.getRange(2,idx.labaKotor,formulaRowCount,1).setFormulas(grossFormulas);
+  sh.getRange(2,idx.kgSisa,formulaRowCount,1).setFormulas(stockFormulas);
+  sh.getRange(2,idx.statusHpp,formulaRowCount,1).setFormulas(statusFormulas);
+  SpreadsheetApp.flush();
   updateSummary_();
 }
 
@@ -609,6 +621,7 @@ function updateSummary_() {
   formulas.forEach((x,i)=>sh.getRange(i+2,2).setFormula(x[1]));
   sh.getRange(2,2,rows.length,1).setNumberFormat('#,##0.00;[Red]-#,##0.00');
   sh.autoResizeColumns(1,4);
+  SpreadsheetApp.flush();
 }
 
 function colLetter_(column) {
