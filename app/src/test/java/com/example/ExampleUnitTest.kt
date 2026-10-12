@@ -47,6 +47,8 @@ class ExampleUnitTest {
                 amount = 2000000.0,
                 paidAmount = 2000000.0,
                 qtyKg = 100.0,
+                weightLossKg = 0.0,
+                mortalityRatePct = 0.0,
                 status = "confirmed"
             ),
             AyamTransaction(
@@ -142,6 +144,50 @@ class ExampleUnitTest {
         assertEquals(300000.0, summary.profit, 0.001)
         assertTrue(summary.profitComplete)
         assertEquals(60.0, summary.stockKg, 0.001)
+    }
+
+    @Test
+    fun testActualBatchHppSubtractsLossAndMortalityAndIncludesFeedAndProcessingCost() {
+        val transactions = listOf(
+            AyamTransaction(
+                id = "BATCH-HPP",
+                date = "2026-10-13",
+                ref = "DO-HPP-1",
+                type = "purchase",
+                description = "DO untuk uji rumus HPP",
+                amount = 2000000.0,
+                paidAmount = 2000000.0,
+                qtyKg = 100.0,
+                weightLossKg = 5.0,
+                mortalityRatePct = 2.0,
+                fcr = 2.0,
+                weightGainKg = 10.0,
+                feedPricePerKg = 5000.0,
+                processingCost = 50000.0,
+                status = "confirmed"
+            ),
+            AyamTransaction(
+                id = "BATCH-SALE",
+                date = "2026-10-13",
+                ref = "SALE-HPP-1",
+                type = "sale",
+                description = "Penjualan batch uji",
+                amount = 500000.0,
+                paidAmount = 500000.0,
+                qtyKg = 10.0,
+                batchRef = "DO-HPP-1",
+                status = "confirmed"
+            )
+        )
+        val summary = AyamKasCalculator.calculate(transactions)
+
+        // Saleable kg = 100 - 5 kg weight loss - (100 * 2%) mortality = 93 kg.
+        // Batch cost = Rp2,000,000 + (FCR 2 * gain 10 kg * feed Rp5,000) + processing Rp50,000.
+        val expectedUnitCost = 2150000.0 / 93.0
+        assertEquals(83.0, summary.stockKg, 0.001)
+        assertEquals(expectedUnitCost * 10.0, summary.cogs, 0.001)
+        assertEquals(500000.0 - expectedUnitCost * 10.0, summary.grossProfit, 0.001)
+        assertTrue(summary.profitComplete)
     }
 
     @Test
