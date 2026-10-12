@@ -103,6 +103,7 @@ class GoogleSheetsSyncClient {
         put("amount", amount)
         putNullable("paidAmount", paidAmount)
         putNullable("qtyKg", qtyKg)
+        putNullable("saleableKg", saleableKg)
         put("batchRef", batchRef)
         put("notes", notes)
         put("status", status)
@@ -121,6 +122,7 @@ class GoogleSheetsSyncClient {
         put("amount", amount)
         putNullable("paidAmount", paidAmount)
         putNullable("qtyKg", qtyKg)
+        putNullable("saleableKg", saleableKg)
         put("batchRef", batchRef)
         put("notes", notes)
         put("status", status)
@@ -148,6 +150,7 @@ class GoogleSheetsSyncClient {
                     amount = o.optDouble("amount", 0.0),
                     paidAmount = o.nullableDouble("paidAmount"),
                     qtyKg = o.nullableDouble("qtyKg"),
+                    saleableKg = o.nullableDouble("saleableKg"),
                     batchRef = o.optString("batchRef"),
                     notes = o.optString("notes"),
                     status = o.optString("status", "draft"),
