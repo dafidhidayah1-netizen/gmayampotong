@@ -12,7 +12,13 @@ const TABLES = {
   Ringkasan: ['Indikator','Nilai','Keterangan'],
   KartuDO: ['Ref DO','Tanggal DO','Kg Pembelian','Nilai DO (Rp)','HPP per Kg (Rp)','Kg Terjual','Sisa Kg','Nilai Stok (Rp)','Status Stok/HPP'],
   Validasi: ['Level','Kategori','ID Transaksi','Tanggal','Referensi','Peringatan'],
-  LogSinkronisasi: ['Waktu','Aksi','ID Transaksi','Perangkat/Pengguna','Keterangan']
+  LogSinkronisasi: ['Waktu','Aksi','ID Transaksi','Perangkat/Pengguna','Keterangan'],
+  KasTransaksi: ['id','sourceTransactionId','date','accountName','direction','amount','paymentMethod','category','description','notes','status','updatedAt','deleted'],
+  KasTransfer: ['id','date','fromAccount','toAccount','amount','reference','notes','status','updatedAt'],
+  PinjamanLuar: ['id','date','party','loanType','direction','amount','paidAmount','dueDate','cashAccount','notes','status','updatedAt'],
+  Karyawan: ['id','name','position','dailyRate','standardHoursPerShift','overtimeRatePerHour','active','updatedAt'],
+  Absensi: ['id','employeeId','employeeName','workDate','shiftName','clockIn','clockOut','breakMinutes','overtimeHours','status','notes','updatedAt'],
+  Payroll: ['id','employeeId','employeeName','period','daysPresent','dailyRate','basePay','overtimeHours','overtimePay','allowance','deductions','totalPay','paidAmount','paymentMethod','cashAccount','status','notes','updatedAt']
 };
 
 function onOpen() {
@@ -244,9 +250,21 @@ function sync_(payload) {
     });
 
     applyCashFormulas_();
+    const ledger = {};
+    const auxSpecs = [
+      ['cashTransactions','KasTransaksi'], ['cashFlows','KasTransfer'],
+      ['externalLoans','PinjamanLuar'], ['employees','Karyawan'],
+      ['attendance','Absensi'], ['payroll','Payroll']
+    ];
+    auxSpecs.forEach(function(spec) {
+      const key = spec[0], sheetName = spec[1];
+      const incomingRecords = Array.isArray(payload[key]) ? payload[key] : [];
+      ledger[key] = mergeAuxRecords_(sheetName, incomingRecords);
+    });
     refreshAyamKasReports();
     appendLog_('SYNC','',String(payload.deviceName || 'Android'),JSON.stringify({
-      diterima:accepted, versiServerDipertahankan:keptServerVersion, penghapusan:appliedDeletes
+      diterima:accepted, versiServerDipertahankan:keptServerVersion, penghapusan:appliedDeletes,
+      tabelTambahan:auxSpecs.reduce(function(acc,spec){acc[spec[0]]=ledger[spec[0]].accepted;return acc;},{})
     }));
     const all = readTransactions_();
     return {
@@ -259,11 +277,69 @@ function sync_(payload) {
       transactions:all.filter(function(tx){return !tx.deleted;}),
       deletedTransactions:all.filter(function(tx){return tx.deleted;}).map(function(tx) {
         return Object.assign({}, tx, {originalId:tx.id, id:'CLOUD-'+tx.id});
-      })
+      }),
+      cashTransactions:ledger.cashTransactions.records,
+      cashFlows:ledger.cashFlows.records,
+      externalLoans:ledger.externalLoans.records,
+      employees:ledger.employees.records,
+      attendance:ledger.attendance.records,
+      payroll:ledger.payroll.records
     };
   } finally {
     lock.releaseLock();
   }
+}
+
+function mergeAuxRecords_(sheetName, incoming) {
+  const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(sheetName);
+  const headers = sh.getRange(1,1,1,sh.getLastColumn()).getDisplayValues()[0].map(String);
+  const rows = sh.getLastRow() > 1 ? sh.getRange(2,1,sh.getLastRow()-1,headers.length).getValues() : [];
+  const byId = new Map();
+  rows.forEach(function(row,index) {
+    const obj = rowToObject_(headers,row);
+    if (obj.id) byId.set(String(obj.id),{rowNumber:index+2,obj:obj});
+  });
+  let accepted = 0, keptServerVersion = 0;
+  incoming.forEach(function(record) {
+    if (!record || !record.id) return;
+    const id=String(record.id);
+    const existing=byId.get(id);
+    const incomingTime=timeValue_(record.updatedAt);
+    const serverTime=existing ? timeValue_(existing.obj.updatedAt) : -1;
+    if (existing && serverTime > incomingTime) { keptServerVersion++; return; }
+    const normalized={};
+    headers.forEach(function(header) {
+      const value=record[header];
+      normalized[header]=value===undefined || value===null ? '' : value;
+    });
+    if (headers.indexOf('updatedAt')>=0 && !normalized.updatedAt) normalized.updatedAt=new Date().toISOString();
+    writeRecord_(sh,headers,normalized,existing ? existing.rowNumber : 0);
+    accepted++;
+  });
+  const records = readAuxRecords_(sheetName);
+  return {accepted:accepted,keptServerVersion:keptServerVersion,records:records};
+}
+
+function readAuxRecords_(sheetName) {
+  const sh=SpreadsheetApp.getActiveSpreadsheet().getSheetByName(sheetName);
+  if (!sh || sh.getLastRow()<2) return [];
+  const headers=sh.getRange(1,1,1,sh.getLastColumn()).getDisplayValues()[0].map(String);
+  return sh.getRange(2,1,sh.getLastRow()-1,headers.length).getValues().map(function(row) {
+    const obj=rowToObject_(headers,row);
+    headers.forEach(function(header) {
+      if (obj[header]===null || obj[header]===undefined) obj[header]='';
+      if (['dailyRate','standardHoursPerShift','overtimeRatePerHour','amount','paidAmount','breakMinutes',
+           'overtimeHours','daysPresent','basePay','overtimePay','allowance','deductions','totalPay'].indexOf(header)>=0) {
+        obj[header]=obj[header]==='' ? 0 : number_(obj[header]);
+      }
+      if (header==='active' || header==='deleted') obj[header]=obj[header]===true || String(obj[header]).toLowerCase()==='true';
+      if (header==='date' || header==='workDate' || header==='dueDate') {
+        if (obj[header] instanceof Date) obj[header]=Utilities.formatDate(obj[header],Session.getScriptTimeZone(),'yyyy-MM-dd');
+      }
+      if (typeof obj[header]==='object' && obj[header] instanceof Date) obj[header]=obj[header].toISOString();
+    });
+    return obj;
+  }).filter(function(obj){return !!obj.id;});
 }
 
 function normalizeTx_(tx) {
