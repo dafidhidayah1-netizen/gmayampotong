@@ -57,6 +57,10 @@ abstract class KasDatabase : RoomDatabase() {
                 db.execSQL("ALTER TABLE ayam_deleted_transactions ADD COLUMN feedPricePerKg REAL")
                 db.execSQL("ALTER TABLE ayam_deleted_transactions ADD COLUMN processingCost REAL NOT NULL DEFAULT 0")
 
+                // Legacy rows had no payment-method or cash-account fields. Never
+                // invent their channel/account during migration; require the owner to map them.
+                db.execSQL("UPDATE ayam_transactions SET paymentMethod='UNVERIFIED', cashAccount='BELUM_DIPETAKAN'")
+
                 db.execSQL("""CREATE TABLE IF NOT EXISTS cash_transactions (
                     id TEXT NOT NULL, sourceTransactionId TEXT, date TEXT NOT NULL, accountName TEXT NOT NULL,
                     direction TEXT NOT NULL, amount REAL NOT NULL, paymentMethod TEXT NOT NULL, category TEXT NOT NULL,
