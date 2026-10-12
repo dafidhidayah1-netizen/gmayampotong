@@ -22,7 +22,8 @@ data class AyamTransaction(
     val notes: String = "",
     val status: String = "confirmed", // "confirmed" or "draft"
     val source: String = "real",
-    val updatedAt: String = ""
+    val updatedAt: String = "",
+    val saleableKg: Double? = null // Berat bersih siap jual setelah potong/susut; null = belum diverifikasi
 ) {
     val isConfirmed: Boolean get() = status == "confirmed"
     val isDraft: Boolean get() = status == "draft"
@@ -58,7 +59,8 @@ data class DeletedAyamTransaction(
     val batchRef: String,
     val notes: String,
     val status: String,
-    val source: String
+    val source: String,
+    val saleableKg: Double? = null
 )
 
 enum class AyamTransactionType(
@@ -121,7 +123,10 @@ data class AyamKasSummary(
     val paidSales: Double = 0.0,
     val paidPurchases: Double = 0.0,
     val qtyMissingCount: Int = 0,
-    val paymentMissingCount: Int = 0
+    val paymentMissingCount: Int = 0,
+    val unlinkedBatchExpenseCount: Int = 0,
+    val duplicateBatchCount: Int = 0,
+    val outputWeightMissingCount: Int = 0
 )
 
 data class TypeBreakdownItem(
