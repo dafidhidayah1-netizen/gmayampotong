@@ -78,6 +78,10 @@ fun WorkforceScreen(
     var allowanceText by remember { mutableStateOf("0") }
     var deductionsText by remember { mutableStateOf("0") }
     var paidNowText by remember { mutableStateOf("0") }
+    var payrollPaymentMethod by remember { mutableStateOf("TRANSFER") }
+    var payrollCashAccount by remember { mutableStateOf("ATM/BANK") }
+    var payrollPaymentMenu by remember { mutableStateOf(false) }
+    var payrollAccountMenu by remember { mutableStateOf(false) }
     var payrollNotes by remember { mutableStateOf("") }
     var approvePayroll by remember { mutableStateOf(false) }
 
@@ -208,6 +212,24 @@ fun WorkforceScreen(
                         Text(AyamKasFormatters.formatRupiah(totalPay), fontWeight = FontWeight.ExtraBold, color = MaterialTheme.colorScheme.primary)
                     }
                     OutlinedTextField(value = paidNowText, onValueChange = { paidNowText = it.filter(Char::isDigit) }, label = { Text("Dibayar sekarang (Rp)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.fillMaxWidth().testTag("input_payroll_paid"), singleLine = true)
+                    Text("Metode pembayaran upah")
+                    OutlinedButton(onClick = { payrollPaymentMenu = true }, modifier = Modifier.fillMaxWidth().testTag("select_payroll_payment_method")) { Text(payrollPaymentMethod) }
+                    DropdownMenu(expanded = payrollPaymentMenu, onDismissRequest = { payrollPaymentMenu = false }) {
+                        listOf("CASH", "TRANSFER", "QRIS").forEach { method ->
+                            DropdownMenuItem(text = { Text(method) }, onClick = {
+                                payrollPaymentMethod = method
+                                payrollCashAccount = when (method) { "CASH" -> "DOMPET"; "QRIS" -> "QRIS"; else -> "ATM/BANK" }
+                                payrollPaymentMenu = false
+                            })
+                        }
+                    }
+                    Text("Akun asal pembayaran")
+                    OutlinedButton(onClick = { payrollAccountMenu = true }, modifier = Modifier.fillMaxWidth().testTag("select_payroll_cash_account")) { Text(payrollCashAccount) }
+                    DropdownMenu(expanded = payrollAccountMenu, onDismissRequest = { payrollAccountMenu = false }) {
+                        listOf("DOMPET", "ATM/BANK", "QRIS").forEach { account ->
+                            DropdownMenuItem(text = { Text(account) }, onClick = { payrollCashAccount = account; payrollAccountMenu = false })
+                        }
+                    }
                     OutlinedTextField(value = payrollNotes, onValueChange = { payrollNotes = it }, label = { Text("Catatan payroll") }, modifier = Modifier.fillMaxWidth(), minLines = 2)
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Checkbox(checked = approvePayroll, onCheckedChange = { approvePayroll = it }, modifier = Modifier.testTag("checkbox_approve_payroll"))
@@ -239,8 +261,8 @@ fun WorkforceScreen(
                                     deductions = deductions,
                                     totalPay = totalPay,
                                     paidAmount = paidNow,
-                                    paymentMethod = "TRANSFER",
-                                    cashAccount = "ATM/BANK",
+                                    paymentMethod = payrollPaymentMethod,
+                                    cashAccount = payrollCashAccount,
                                     status = status,
                                     notes = payrollNotes.trim(),
                                     updatedAt = ""
