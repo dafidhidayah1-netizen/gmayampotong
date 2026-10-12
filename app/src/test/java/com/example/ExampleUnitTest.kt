@@ -3,6 +3,8 @@ package com.example
 import com.example.data.model.AyamKasCalculator
 import com.example.data.model.AyamKasFormatters
 import com.example.data.model.AyamTransaction
+import com.example.data.model.BusinessLedgerCalculator
+import com.example.data.model.ExternalLoan
 import com.example.data.model.InitialAyamData
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -190,6 +192,115 @@ class ExampleUnitTest {
         assertEquals(expectedUnitCost * 10.0, summary.cogs, 0.001)
         assertEquals(500000.0 - expectedUnitCost * 10.0, summary.grossProfit, 0.001)
         assertTrue(summary.profitComplete)
+    }
+
+    @Test
+    fun testAttendanceShiftHoursAndOvertimeUseClockInOutAndBreak() {
+        val workedHours = BusinessLedgerCalculator.workedHours(
+            clockIn = "08:00",
+            clockOut = "18:00",
+            breakMinutes = 60
+        )
+        val overtimeHours = BusinessLedgerCalculator.overtimeHours(
+            clockIn = "08:00",
+            clockOut = "18:00",
+            breakMinutes = 60,
+            standardHours = 8.0
+        )
+        assertEquals(9.0, workedHours, 0.001)
+        assertEquals(1.0, overtimeHours, 0.001)
+
+        val overnight = BusinessLedgerCalculator.workedHours(
+            clockIn = "22:00",
+            clockOut = "06:00",
+            breakMinutes = 30
+        )
+        assertEquals(7.5, overnight, 0.001)
+    }
+
+    @Test
+    fun testPayrollMathSeparatesBaseOvertimeAllowanceAndDeductions() {
+        val result = BusinessLedgerCalculator.calculatePayroll(
+            daysPresent = 20.0,
+            dailyRate = 100000.0,
+            overtimeHours = 10.0,
+            overtimeRatePerHour = 20000.0,
+            allowance = 50000.0,
+            deductions = 25000.0
+        )
+        assertEquals(2000000.0, result.basePay, 0.001)
+        assertEquals(200000.0, result.overtimePay, 0.001)
+        assertEquals(2125000.0, result.totalPay, 0.001)
+    }
+
+    @Test
+    fun testLoanRepaymentMustUseSameReferenceAndOnlyConfirmedEventsCount() {
+        val records = listOf(
+            ExternalLoan(
+                id = "L-1",
+                date = "2026-10-01",
+                party = "Supplier A",
+                loanReference = "OWNER-LOAN-001",
+                loanType = "OWNER_LOAN",
+                direction = "RECEIVED",
+                amount = 1000000.0,
+                paidAmount = 1000000.0,
+                dueDate = "",
+                cashAccount = "ATM/BANK",
+                notes = "",
+                status = "confirmed",
+                updatedAt = ""
+            ),
+            ExternalLoan(
+                id = "L-2",
+                date = "2026-10-10",
+                party = "Supplier A",
+                loanReference = "OWNER-LOAN-001",
+                loanType = "OWNER_LOAN",
+                direction = "REPAYMENT",
+                amount = 250000.0,
+                paidAmount = 250000.0,
+                dueDate = "",
+                cashAccount = "ATM/BANK",
+                notes = "",
+                status = "confirmed",
+                updatedAt = ""
+            ),
+            ExternalLoan(
+                id = "L-3",
+                date = "2026-10-11",
+                party = "Supplier A",
+                loanReference = "OWNER-LOAN-001",
+                loanType = "OWNER_LOAN",
+                direction = "REPAYMENT",
+                amount = 300000.0,
+                paidAmount = 300000.0,
+                dueDate = "",
+                cashAccount = "ATM/BANK",
+                notes = "",
+                status = "draft",
+                updatedAt = ""
+            ),
+            ExternalLoan(
+                id = "L-4",
+                date = "2026-10-11",
+                party = "Supplier A",
+                loanReference = "OTHER-LOAN",
+                loanType = "OWNER_LOAN",
+                direction = "RECEIVED",
+                amount = 800000.0,
+                paidAmount = 800000.0,
+                dueDate = "",
+                cashAccount = "ATM/BANK",
+                notes = "",
+                status = "confirmed",
+                updatedAt = ""
+            )
+        )
+        val balance = BusinessLedgerCalculator.loanBalance(records, "OWNER-LOAN-001", "OWNER_LOAN")
+        assertEquals(1000000.0, balance.principal, 0.001)
+        assertEquals(250000.0, balance.settled, 0.001)
+        assertEquals(750000.0, balance.outstanding, 0.001)
     }
 
     @Test
