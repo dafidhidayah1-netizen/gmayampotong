@@ -347,6 +347,7 @@ fun AyamKasApp(viewModel: AyamKasViewModel) {
             } else when (currentTab) {
                 AyamNavTab.DASHBOARD -> DashboardScreen(
                     summary = summary,
+                    cashAccountBalances = cashAccountBalances,
                     recentConfirmed = allTransactions.filter { it.isConfirmed },
                     onNavigateToTransactions = { currentTab = AyamNavTab.TRANSAKSI },
                     onNavigateToStock = { currentTab = AyamNavTab.STOCK },
