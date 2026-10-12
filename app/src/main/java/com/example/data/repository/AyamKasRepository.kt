@@ -94,6 +94,14 @@ class AyamKasRepository(
         require(loan.party.isNotBlank()) { "Nama pihak pinjaman wajib diisi" }
         val debtTypes = setOf("OWNER_LOAN", "BUSINESS_BORROWING")
         val lendingTypes = setOf("BUSINESS_LENDING")
+        val allowedDirections = when (loan.loanType) {
+            in debtTypes -> setOf("RECEIVED", "REPAYMENT")
+            in lendingTypes -> setOf("GIVEN", "COLLECTION")
+            "OWNER_INJECTION" -> setOf("RECEIVED")
+            "OWNER_PERSONAL", "UNEXPECTED_COST" -> setOf("GIVEN")
+            else -> emptySet()
+        }
+        require(loan.direction in allowedDirections) { "Arah kas tidak sesuai kategori pinjaman/transaksi yang dipilih" }
         val tracksLoanBalance = loan.loanType in debtTypes || loan.loanType in lendingTypes
         val loanRef = loan.loanReference.trim()
         if (tracksLoanBalance) require(loanRef.isNotBlank()) { "Referensi pinjaman wajib diisi untuk menghitung sisa pinjaman" }
