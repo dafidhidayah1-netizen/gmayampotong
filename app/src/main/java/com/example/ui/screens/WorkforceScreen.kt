@@ -35,6 +35,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.example.data.model.AttendanceRecord
+import com.example.data.model.BusinessLedgerCalculator
 import com.example.data.model.AyamKasFormatters
 import com.example.data.model.EmployeeRecord
 import com.example.data.model.PayrollRecord
@@ -93,11 +94,19 @@ fun WorkforceScreen(
     }
     val daysPresent = payrollAttendance.size.toDouble()
     val overtimeHours = payrollAttendance.sumOf { it.overtimeHours }
-    val basePay = daysPresent * (selectedPayrollEmployee?.dailyRate ?: 0.0)
-    val overtimePay = overtimeHours * (selectedPayrollEmployee?.overtimeRatePerHour ?: 0.0)
     val allowance = allowanceText.toDoubleOrNull() ?: 0.0
     val deductions = deductionsText.toDoubleOrNull() ?: 0.0
-    val totalPay = (basePay + overtimePay + allowance - deductions).coerceAtLeast(0.0)
+    val payrollAmounts = BusinessLedgerCalculator.calculatePayroll(
+        daysPresent = daysPresent,
+        dailyRate = selectedPayrollEmployee?.dailyRate ?: 0.0,
+        overtimeHours = overtimeHours,
+        overtimeRatePerHour = selectedPayrollEmployee?.overtimeRatePerHour ?: 0.0,
+        allowance = allowance,
+        deductions = deductions
+    )
+    val basePay = payrollAmounts.basePay
+    val overtimePay = payrollAmounts.overtimePay
+    val totalPay = payrollAmounts.totalPay
     val paidNow = paidNowText.toDoubleOrNull() ?: 0.0
 
     LazyColumn(
