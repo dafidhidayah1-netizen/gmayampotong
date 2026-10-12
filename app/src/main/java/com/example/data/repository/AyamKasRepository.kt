@@ -30,7 +30,7 @@ class AyamKasRepository(
     suspend fun ensureSeededInitialData() {
         val count = dao.getTransactionCount()
         if (count == 0) {
-            dao.insertAll(InitialAyamData.REAL_TRANSACTIONS)
+            dao.insertAll(InitialAyamData.REAL_TRANSACTIONS.map { it.copy(status = "draft") })
         }
     }
 
@@ -215,7 +215,7 @@ class AyamKasRepository(
             )
         }
         dao.clearAll()
-        dao.insertAll(defaults.map { it.copy(updatedAt = now) })
+        dao.insertAll(defaults.map { it.copy(status = "draft", updatedAt = now) })
     }
 
     fun generateJsonExport(transactions: List<AyamTransaction>): String {
