@@ -460,82 +460,240 @@ class AyamKasRepository(
         dao.insertAll(defaults.map { it.copy(updatedAt = now) })
     }
 
-    fun generateJsonExport(transactions: List<AyamTransaction>): String {
+    fun generateJsonExport(
+        transactions: List<AyamTransaction>,
+        deletedTransactions: List<DeletedAyamTransaction> = emptyList(),
+        cashTransactions: List<CashTransaction> = emptyList(),
+        cashFlows: List<CashFlow> = emptyList(),
+        externalLoans: List<ExternalLoan> = emptyList(),
+        employees: List<EmployeeRecord> = emptyList(),
+        attendance: List<AttendanceRecord> = emptyList(),
+        payroll: List<PayrollRecord> = emptyList()
+    ): String {
         val root = JSONObject()
         root.put("app", "AyamKas Pro")
-        root.put("version", 1)
-        root.put("exportedAt", SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US).format(Date()))
-
-        val arr = JSONArray()
-        for (t in transactions) {
-            val item = JSONObject()
-            item.put("id", t.id)
-            item.put("date", t.date)
-            item.put("ref", t.ref)
-            item.put("type", t.type)
-            item.put("category", t.category)
-            item.put("description", t.description)
-            item.put("amount", t.amount)
-            if (t.paidAmount != null) item.put("paidAmount", t.paidAmount) else item.put("paidAmount", JSONObject.NULL)
-            if (t.qtyKg != null) item.put("qtyKg", t.qtyKg) else item.put("qtyKg", JSONObject.NULL)
-            item.put("batchRef", t.batchRef)
-            item.put("notes", t.notes)
-            item.put("status", t.status)
-            item.put("source", t.source)
-            item.put("updatedAt", t.updatedAt)
-            arr.put(item)
-        }
-        root.put("transactions", arr)
+        root.put("version", 2)
+        root.put("fullBackup", true)
+        root.put("exportedAt", nowIso())
+        root.put("transactions", JSONArray().apply { transactions.forEach { put(it.toBackupJson()) } })
+        root.put("deletedTransactions", JSONArray().apply { deletedTransactions.forEach { put(it.toBackupJson()) } })
+        root.put("cashTransactions", JSONArray().apply { cashTransactions.forEach { put(it.toBackupJson()) } })
+        root.put("cashFlows", JSONArray().apply { cashFlows.forEach { put(it.toBackupJson()) } })
+        root.put("externalLoans", JSONArray().apply { externalLoans.forEach { put(it.toBackupJson()) } })
+        root.put("employees", JSONArray().apply { employees.forEach { put(it.toBackupJson()) } })
+        root.put("attendance", JSONArray().apply { attendance.forEach { put(it.toBackupJson()) } })
+        root.put("payroll", JSONArray().apply { payroll.forEach { put(it.toBackupJson()) } })
         return root.toString(2)
     }
 
-    suspend fun importJsonData(jsonString: String): Result<Int> {
-        return runCatching {
-            val root = JSONObject(jsonString)
-            val arr = if (root.has("transactions")) {
-                root.getJSONArray("transactions")
-            } else {
-                JSONArray(jsonString)
-            }
+    private fun AyamTransaction.toBackupJson() = JSONObject().apply {
+        put("id", id); put("date", date); put("ref", ref); put("type", type); put("category", category)
+        put("description", description); put("amount", amount); putNullable("paidAmount", paidAmount)
+        putNullable("qtyKg", qtyKg); put("batchRef", batchRef); put("notes", notes); put("status", status)
+        put("source", source); put("updatedAt", updatedAt); put("paymentMethod", paymentMethod)
+        put("cashAccount", cashAccount); put("supplier", supplier); putNullable("weightLossKg", weightLossKg)
+        putNullable("mortalityRatePct", mortalityRatePct); putNullable("fcr", fcr); putNullable("weightGainKg", weightGainKg)
+        putNullable("feedPricePerKg", feedPricePerKg); put("processingCost", processingCost)
+    }
 
-            val list = mutableListOf<AyamTransaction>()
-            for (i in 0 until arr.length()) {
-                val item = arr.getJSONObject(i)
-                val id = item.optString("id", "TX-${System.currentTimeMillis()}-$i")
-                val date = item.optString("date", "")
-                val type = item.optString("type", "sale")
-                val desc = item.optString("description", "Transaksi")
-                val amount = item.optDouble("amount", 0.0)
+    private fun DeletedAyamTransaction.toBackupJson() = JSONObject().apply {
+        put("id", id); put("originalId", originalId); put("deletedAt", deletedAt); put("date", date)
+        put("ref", ref); put("type", type); put("category", category); put("description", description)
+        put("amount", amount); putNullable("paidAmount", paidAmount); putNullable("qtyKg", qtyKg)
+        put("batchRef", batchRef); put("notes", notes); put("status", status); put("source", source)
+        put("paymentMethod", paymentMethod); put("cashAccount", cashAccount); put("supplier", supplier)
+        putNullable("weightLossKg", weightLossKg); putNullable("mortalityRatePct", mortalityRatePct)
+        putNullable("fcr", fcr); putNullable("weightGainKg", weightGainKg); putNullable("feedPricePerKg", feedPricePerKg)
+        put("processingCost", processingCost)
+    }
 
-                val paidAmount = if (item.isNull("paidAmount") || !item.has("paidAmount")) null else item.optDouble("paidAmount")
-                val qtyKg = if (item.isNull("qtyKg") || !item.has("qtyKg")) null else item.optDouble("qtyKg")
+    private fun CashTransaction.toBackupJson() = JSONObject().apply {
+        put("id", id); put("sourceTransactionId", sourceTransactionId ?: JSONObject.NULL); put("date", date)
+        put("accountName", accountName); put("direction", direction); put("amount", amount)
+        put("paymentMethod", paymentMethod); put("category", category); put("description", description)
+        put("notes", notes); put("status", status); put("updatedAt", updatedAt); put("deleted", deleted)
+    }
 
-                list.add(
-                    AyamTransaction(
-                        id = id,
-                        date = date,
-                        ref = item.optString("ref", ""),
-                        type = type,
-                        category = item.optString("category", "Umum"),
-                        description = desc,
-                        amount = amount,
-                        paidAmount = paidAmount,
-                        qtyKg = qtyKg,
-                        batchRef = item.optString("batchRef", ""),
-                        notes = item.optString("notes", ""),
-                        status = item.optString("status", "draft"),
-                        source = item.optString("source", "import"),
-                        updatedAt = item.optString("updatedAt", "")
-                    )
-                )
-            }
+    private fun CashFlow.toBackupJson() = JSONObject().apply {
+        put("id", id); put("date", date); put("fromAccount", fromAccount); put("toAccount", toAccount)
+        put("amount", amount); put("reference", reference); put("notes", notes); put("status", status); put("updatedAt", updatedAt)
+    }
 
-            if (list.isNotEmpty()) {
-                dao.clearAll()
-                dao.insertAll(list)
-            }
-            list.size
+    private fun ExternalLoan.toBackupJson() = JSONObject().apply {
+        put("id", id); put("date", date); put("party", party); put("loanReference", loanReference)
+        put("loanType", loanType); put("direction", direction); put("amount", amount); put("paidAmount", paidAmount)
+        put("dueDate", dueDate); put("cashAccount", cashAccount); put("notes", notes); put("status", status); put("updatedAt", updatedAt)
+    }
+
+    private fun EmployeeRecord.toBackupJson() = JSONObject().apply {
+        put("id", id); put("name", name); put("position", position); put("dailyRate", dailyRate)
+        put("standardHoursPerShift", standardHoursPerShift); put("overtimeRatePerHour", overtimeRatePerHour)
+        put("active", active); put("updatedAt", updatedAt)
+    }
+
+    private fun AttendanceRecord.toBackupJson() = JSONObject().apply {
+        put("id", id); put("employeeId", employeeId); put("employeeName", employeeName); put("workDate", workDate)
+        put("shiftName", shiftName); put("clockIn", clockIn); put("clockOut", clockOut); put("breakMinutes", breakMinutes)
+        put("overtimeHours", overtimeHours); put("status", status); put("notes", notes); put("updatedAt", updatedAt)
+    }
+
+    private fun PayrollRecord.toBackupJson() = JSONObject().apply {
+        put("id", id); put("employeeId", employeeId); put("employeeName", employeeName); put("period", period)
+        put("daysPresent", daysPresent); put("dailyRate", dailyRate); put("basePay", basePay); put("overtimeHours", overtimeHours)
+        put("overtimePay", overtimePay); put("allowance", allowance); put("deductions", deductions); put("totalPay", totalPay)
+        put("paidAmount", paidAmount); put("paymentMethod", paymentMethod); put("cashAccount", cashAccount)
+        put("status", status); put("notes", notes); put("updatedAt", updatedAt)
+    }
+
+    private fun JSONObject.putNullable(key: String, value: Double?) {
+        put(key, value ?: JSONObject.NULL)
+    }
+
+    private fun JSONObject.nullableDouble(key: String): Double? =
+        if (!has(key) || isNull(key)) null else optDouble(key, 0.0)
+
+    suspend fun importJsonData(jsonString: String): Result<Int> = runCatching {
+        val root = runCatching { JSONObject(jsonString) }.getOrNull()
+        val transactionArray = if (root != null && root.has("transactions")) {
+            root.getJSONArray("transactions")
+        } else {
+            JSONArray(jsonString)
         }
+
+        val transactions = mutableListOf<AyamTransaction>()
+        for (i in 0 until transactionArray.length()) {
+            val item = transactionArray.getJSONObject(i)
+            val id = item.optString("id").ifBlank { "TX-${java.util.UUID.randomUUID()}" }
+            val date = item.optString("date", "")
+            val type = item.optString("type", "sale")
+            val amount = item.optDouble("amount", 0.0)
+            require(id.isNotBlank() && date.isNotBlank() && amount >= 0.0) { "Data transaksi dalam file cadangan tidak valid" }
+            transactions.add(
+                AyamTransaction(
+                    id = id,
+                    date = date,
+                    ref = item.optString("ref", ""),
+                    type = type,
+                    category = item.optString("category", "Umum"),
+                    description = item.optString("description", "Transaksi"),
+                    amount = amount,
+                    paidAmount = item.nullableDouble("paidAmount"),
+                    qtyKg = item.nullableDouble("qtyKg"),
+                    batchRef = item.optString("batchRef", ""),
+                    notes = item.optString("notes", ""),
+                    status = item.optString("status", "draft"),
+                    source = item.optString("source", "import"),
+                    updatedAt = item.optString("updatedAt", ""),
+                    paymentMethod = item.optString("paymentMethod", "UNVERIFIED"),
+                    cashAccount = item.optString("cashAccount", "BELUM_DIPETAKAN"),
+                    supplier = item.optString("supplier", ""),
+                    weightLossKg = item.nullableDouble("weightLossKg"),
+                    mortalityRatePct = item.nullableDouble("mortalityRatePct"),
+                    fcr = item.nullableDouble("fcr"),
+                    weightGainKg = item.nullableDouble("weightGainKg"),
+                    feedPricePerKg = item.nullableDouble("feedPricePerKg"),
+                    processingCost = item.optDouble("processingCost", 0.0)
+                )
+            )
+        }
+
+        val deletedList = mutableListOf<DeletedAyamTransaction>()
+        val deletedArray = root?.optJSONArray("deletedTransactions")
+        if (deletedArray != null) for (i in 0 until deletedArray.length()) {
+            val item = deletedArray.getJSONObject(i)
+            val originalId = item.optString("originalId").ifBlank { item.optString("id") }
+            if (originalId.isBlank()) continue
+            deletedList.add(DeletedAyamTransaction(
+                id = item.optString("id", "DEL-${originalId}"), originalId = originalId,
+                deletedAt = item.optString("deletedAt", ""), date = item.optString("date", ""),
+                ref = item.optString("ref", ""), type = item.optString("type", "sale"),
+                category = item.optString("category", "Umum"), description = item.optString("description", ""),
+                amount = item.optDouble("amount", 0.0), paidAmount = item.nullableDouble("paidAmount"),
+                qtyKg = item.nullableDouble("qtyKg"), batchRef = item.optString("batchRef", ""),
+                notes = item.optString("notes", ""), status = item.optString("status", "draft"),
+                source = item.optString("source", "import"), paymentMethod = item.optString("paymentMethod", "UNVERIFIED"),
+                cashAccount = item.optString("cashAccount", "BELUM_DIPETAKAN"), supplier = item.optString("supplier", ""),
+                weightLossKg = item.nullableDouble("weightLossKg"), mortalityRatePct = item.nullableDouble("mortalityRatePct"),
+                fcr = item.nullableDouble("fcr"), weightGainKg = item.nullableDouble("weightGainKg"),
+                feedPricePerKg = item.nullableDouble("feedPricePerKg"), processingCost = item.optDouble("processingCost", 0.0)
+            ))
+        }
+
+        val isFullBackup = root != null && root.optBoolean("fullBackup", false) && root.optInt("version", 1) >= 2
+        val cashTransactions = mutableListOf<CashTransaction>()
+        val cashFlows = mutableListOf<CashFlow>()
+        val externalLoans = mutableListOf<ExternalLoan>()
+        val employees = mutableListOf<EmployeeRecord>()
+        val attendance = mutableListOf<AttendanceRecord>()
+        val payroll = mutableListOf<PayrollRecord>()
+        if (isFullBackup && root != null) {
+            root.optJSONArray("cashTransactions")?.let { arr -> for (i in 0 until arr.length()) {
+                val o=arr.getJSONObject(i)
+                cashTransactions.add(CashTransaction(o.optString("id"),if (o.isNull("sourceTransactionId")) null else o.optString("sourceTransactionId"),
+                    o.optString("date"),o.optString("accountName","DOMPET"),o.optString("direction","IN"),o.optDouble("amount",0.0),
+                    o.optString("paymentMethod","UNVERIFIED"),o.optString("category"),o.optString("description"),o.optString("notes"),
+                    o.optString("status","draft"),o.optString("updatedAt"),o.optBoolean("deleted",false)))
+            } }
+            root.optJSONArray("cashFlows")?.let { arr -> for (i in 0 until arr.length()) {
+                val o=arr.getJSONObject(i)
+                cashFlows.add(CashFlow(o.optString("id"),o.optString("date"),o.optString("fromAccount"),o.optString("toAccount"),
+                    o.optDouble("amount",0.0),o.optString("reference"),o.optString("notes"),o.optString("status","draft"),o.optString("updatedAt")))
+            } }
+            root.optJSONArray("externalLoans")?.let { arr -> for (i in 0 until arr.length()) {
+                val o=arr.getJSONObject(i)
+                externalLoans.add(ExternalLoan(o.optString("id"),o.optString("date"),o.optString("party"),o.optString("loanReference"),
+                    o.optString("loanType"),o.optString("direction"),o.optDouble("amount",0.0),o.optDouble("paidAmount",0.0),
+                    o.optString("dueDate"),o.optString("cashAccount","ATM/BANK"),o.optString("notes"),
+                    o.optString("status","draft"),o.optString("updatedAt")))
+            } }
+            root.optJSONArray("employees")?.let { arr -> for (i in 0 until arr.length()) {
+                val o=arr.getJSONObject(i)
+                employees.add(EmployeeRecord(o.optString("id"),o.optString("name"),o.optString("position"),o.optDouble("dailyRate",0.0),
+                    o.optDouble("standardHoursPerShift",8.0),o.optDouble("overtimeRatePerHour",0.0),o.optBoolean("active",true),o.optString("updatedAt")))
+            } }
+            root.optJSONArray("attendance")?.let { arr -> for (i in 0 until arr.length()) {
+                val o=arr.getJSONObject(i)
+                attendance.add(AttendanceRecord(o.optString("id"),o.optString("employeeId"),o.optString("employeeName"),o.optString("workDate"),
+                    o.optString("shiftName"),o.optString("clockIn"),o.optString("clockOut"),o.optInt("breakMinutes",0),
+                    o.optDouble("overtimeHours",0.0),o.optString("status","PRESENT"),o.optString("notes"),o.optString("updatedAt")))
+            } }
+            root.optJSONArray("payroll")?.let { arr -> for (i in 0 until arr.length()) {
+                val o=arr.getJSONObject(i)
+                payroll.add(PayrollRecord(o.optString("id"),o.optString("employeeId"),o.optString("employeeName"),o.optString("period"),
+                    o.optDouble("daysPresent",0.0),o.optDouble("dailyRate",0.0),o.optDouble("basePay",0.0),o.optDouble("overtimeHours",0.0),
+                    o.optDouble("overtimePay",0.0),o.optDouble("allowance",0.0),o.optDouble("deductions",0.0),o.optDouble("totalPay",0.0),
+                    o.optDouble("paidAmount",0.0),o.optString("paymentMethod","TRANSFER"),o.optString("cashAccount","ATM/BANK"),
+                    o.optString("status","DRAFT"),o.optString("notes"),o.optString("updatedAt")))
+            } }
+        }
+
+        // Parse everything before changing the database, so a malformed file cannot
+        // wipe the user's current records partway through the restore process.
+        dao.clearAll()
+        if (transactions.isNotEmpty()) dao.insertAll(transactions)
+        dao.clearAllDeleted()
+        deletedList.forEach { dao.insertDeleted(it) }
+
+        if (isFullBackup) {
+            businessDao.clearAllCashTransactions()
+            businessDao.clearAllCashFlows()
+            businessDao.clearAllExternalLoans()
+            businessDao.clearAllEmployees()
+            businessDao.clearAllAttendance()
+            businessDao.clearAllPayroll()
+            if (cashTransactions.isNotEmpty()) businessDao.saveCashTransactions(cashTransactions)
+            if (cashFlows.isNotEmpty()) businessDao.saveCashFlows(cashFlows)
+            if (externalLoans.isNotEmpty()) businessDao.saveExternalLoans(externalLoans)
+            if (employees.isNotEmpty()) businessDao.saveEmployees(employees)
+            if (attendance.isNotEmpty()) businessDao.saveAttendances(attendance)
+            if (payroll.isNotEmpty()) businessDao.savePayrollRecords(payroll)
+        } else {
+            // Older v1 JSON contains transactions only. Existing accounts/loans/payroll
+            // are retained, and their cash mirrors are rebuilt from the imported ledger.
+            businessDao.clearMirroredCashTransactions()
+            transactions.filter { it.isConfirmed }.forEach { updateCashMirror(it) }
+        }
+        transactions.size
     }
 
     fun generateCsvExport(transactions: List<AyamTransaction>): String {
