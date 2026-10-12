@@ -42,6 +42,10 @@ import java.util.Locale
 class AyamKasViewModel(application: Application) : AndroidViewModel(application) {
 
     private val cloudPrefs = application.getSharedPreferences("ayamkaspro_cloud", Context.MODE_PRIVATE)
+    private val businessPrefs = application.getSharedPreferences("ayamkaspro_business", Context.MODE_PRIVATE)
+    val companyName = MutableStateFlow(businessPrefs.getString("companyName", "GM Ayam Potong").orEmpty().ifBlank { "GM Ayam Potong" })
+    val companyLogoUri = MutableStateFlow(businessPrefs.getString("companyLogoUri", "").orEmpty())
+    val themeMode = MutableStateFlow(businessPrefs.getString("themeMode", "SYSTEM").orEmpty())
     private val cloudClient = GoogleSheetsSyncClient()
     val cloudUrl = MutableStateFlow(cloudPrefs.getString("url", "").orEmpty())
     val cloudApiKey = MutableStateFlow(cloudPrefs.getString("apiKey", "").orEmpty())
@@ -218,6 +222,30 @@ class AyamKasViewModel(application: Application) : AndroidViewModel(application)
         SharingStarted.WhileSubscribed(5000),
         emptyList()
     )
+
+    fun saveBusinessSettings(nameInput: String, themeModeInput: String) {
+        val name = nameInput.trim()
+        val theme = themeModeInput.uppercase(Locale.ROOT)
+        if (name.isBlank()) {
+            viewModelScope.launch { _userMessage.emit("Nama perusahaan tidak boleh kosong") }
+            return
+        }
+        if (theme !in setOf("SYSTEM", "LIGHT", "DARK")) {
+            viewModelScope.launch { _userMessage.emit("Mode tema tidak valid") }
+            return
+        }
+        businessPrefs.edit().putString("companyName", name).putString("themeMode", theme).apply()
+        companyName.value = name
+        themeMode.value = theme
+        viewModelScope.launch { _userMessage.emit("Nama perusahaan dan tema tersimpan") }
+    }
+
+    fun saveCompanyLogoUri(uri: String) {
+        val clean = uri.trim()
+        businessPrefs.edit().putString("companyLogoUri", clean).apply()
+        companyLogoUri.value = clean
+        viewModelScope.launch { _userMessage.emit(if (clean.isBlank()) "Logo perusahaan dihapus" else "Logo perusahaan tersimpan") }
+    }
 
     fun saveCloudSettings(urlInput: String, apiKeyInput: String, autoSync: Boolean) {
         if (!persistCloudSettings(urlInput, apiKeyInput, autoSync)) return
