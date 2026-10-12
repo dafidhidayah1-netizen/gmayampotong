@@ -401,7 +401,11 @@ function refreshAyamKasReports() {
       warnings.push(['TINGGI','STOK',batch.id,batch.date,batch.ref,'Kg penjualan melebihi total kg pembelian DO. Periksa tautan DO, susut, dan basis berat.']);
     }
   });
-  if (warnings.length) val.getRange(2,1,warnings.length,6).setValues(warnings);
+  if (warnings.length) {
+    ['Level','Kategori','ID Transaksi','Tanggal','Referensi','Peringatan'].forEach(function(header,i) {
+      val.getRange(2,valCols[header],warnings.length,1).setValues(warnings.map(function(row){return [row[i];}));
+    });
+  }
 
   const sum = ss.getSheetByName('Ringkasan');
   const sumCols = columnMap_(sum);
@@ -429,9 +433,17 @@ function refreshAyamKasReports() {
     ['Jumlah transaksi draf','=COUNTIFS(' + txRange('status') + ',"draft",' + txRange('deleted') + ',"<>TRUE")','Selesaikan pemeriksaan dan konfirmasi sebelum tutup periode.'],
     ['Jumlah peringatan','=COUNTA(' + valRange('Level') + ')','Buka lembar Validasi untuk meninjau dan menyelesaikan temuan.']
   ];
-  sum.getRange(2,1,summaryRows.length,3).setValues(summaryRows.map(function(r){return [r[0],r[1],r[2]];}));
+  ['Indikator','Nilai','Keterangan'].forEach(function(header,i) {
+    sum.getRange(2,sumCols[header],summaryRows.length,1).setValues(summaryRows.map(function(row){return [row[i]];}));
+  });
+  const valueLetter = columnLetter_(sumCols['Nilai']);
   summaryRows.forEach(function(r,i) {
-    if (String(r[1]).charAt(0)==='=') sum.getRange(i+2,sumCols['Nilai']).setFormula(r[1]);
+    if (String(r[1]).charAt(0)==='=') {
+      const formula = i===4
+        ? '=' + valueLetter + '3-' + valueLetter + '4-' + valueLetter + '5'
+        : r[1];
+      sum.getRange(i+2,sumCols['Nilai']).setFormula(formula);
+    }
   });
   sum.getRange(2,sumCols['Nilai'],5,1).setNumberFormat('"Rp" #,##0;[Red]-"Rp" #,##0');
   sum.getRange(8,sumCols['Nilai'],1,1).setNumberFormat('#,##0.###');
