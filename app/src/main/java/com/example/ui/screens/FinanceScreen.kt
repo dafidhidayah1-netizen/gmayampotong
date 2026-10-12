@@ -79,6 +79,13 @@ fun FinanceScreen(
     var confirmedLoan by remember { mutableStateOf(true) }
 
     val accounts = listOf("DOMPET", "ATM/BANK", "QRIS")
+    val loanDirectionOptions = when (loanType) {
+        "OWNER_LOAN", "BUSINESS_BORROWING" -> listOf("RECEIVED", "REPAYMENT")
+        "BUSINESS_LENDING" -> listOf("GIVEN", "COLLECTION")
+        "OWNER_INJECTION" -> listOf("RECEIVED")
+        "OWNER_PERSONAL", "UNEXPECTED_COST" -> listOf("GIVEN")
+        else -> emptyList()
+    }
     val balanceTotal = cashBalances.values.sum()
     val loanPositionRows = loans
         .filter { it.status == "confirmed" && it.loanReference.isNotBlank() }
@@ -179,12 +186,26 @@ fun FinanceScreen(
                     Text("Kategori")
                     OutlinedButton(onClick = { loanTypeMenu = true }, modifier = Modifier.fillMaxWidth().testTag("select_loan_type")) { Text(loanType) }
                     DropdownMenu(expanded = loanTypeMenu, onDismissRequest = { loanTypeMenu = false }) {
-                        listOf("OWNER_LOAN", "BUSINESS_BORROWING", "BUSINESS_LENDING", "OWNER_PERSONAL", "UNEXPECTED_COST", "OWNER_INJECTION").forEach { a -> DropdownMenuItem(text = { Text(a) }, onClick = { loanType = a; loanTypeMenu = false }) }
+                        listOf("OWNER_LOAN", "BUSINESS_BORROWING", "BUSINESS_LENDING", "OWNER_PERSONAL", "UNEXPECTED_COST", "OWNER_INJECTION").forEach { a ->
+                            DropdownMenuItem(text = { Text(a) }, onClick = {
+                                loanType = a
+                                val allowed = when (a) {
+                                    "OWNER_LOAN", "BUSINESS_BORROWING" -> listOf("RECEIVED", "REPAYMENT")
+                                    "BUSINESS_LENDING" -> listOf("GIVEN", "COLLECTION")
+                                    "OWNER_INJECTION" -> listOf("RECEIVED")
+                                    else -> listOf("GIVEN")
+                                }
+                                if (direction !in allowed) direction = allowed.first()
+                                loanTypeMenu = false
+                            })
+                        }
                     }
                     Text("Arah kas")
                     OutlinedButton(onClick = { loanDirectionMenu = true }, modifier = Modifier.fillMaxWidth().testTag("select_loan_direction")) { Text(direction) }
                     DropdownMenu(expanded = loanDirectionMenu, onDismissRequest = { loanDirectionMenu = false }) {
-                        listOf("RECEIVED", "REPAYMENT", "GIVEN", "COLLECTION").forEach { a -> DropdownMenuItem(text = { Text(a) }, onClick = { direction = a; loanDirectionMenu = false }) }
+                        loanDirectionOptions.forEach { a ->
+                            DropdownMenuItem(text = { Text(a) }, onClick = { direction = a; loanDirectionMenu = false })
+                        }
                     }
                     OutlinedTextField(value = loanAmount, onValueChange = { loanAmount = it.filter(Char::isDigit) }, label = { Text("Nominal peristiwa kas (Rp)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.fillMaxWidth().testTag("input_loan_amount"), singleLine = true)
                     OutlinedTextField(value = dueDate, onValueChange = { dueDate = it }, label = { Text("Jatuh tempo (opsional YYYY-MM-DD)") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
