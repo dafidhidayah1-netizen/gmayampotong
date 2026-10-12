@@ -629,7 +629,7 @@ function refreshAyamKasReports() {
     refs.forEach(function(_,i) {
       const r=i+2;
       const doRef = '$' + letter('Ref DO') + r;
-      const purchaseCriteria = txRange('ref') + '=' + doRef + ',' + txRange('type') + ',"purchase",' +
+      const purchaseCriteria = txRange('ref') + ',' + doRef + ',' + txRange('type') + ',"purchase",' +
         txRange('status') + ',"confirmed",' + txRange('deleted') + ',"<>TRUE"';
       const saleCriteria = txRange('batchRef') + ',' + doRef + ',' + txRange('type') + ',"sale",' +
         txRange('status') + ',"confirmed",' + txRange('deleted') + ',"<>TRUE"';
@@ -822,7 +822,7 @@ function refreshAyamKasReports() {
     ['Penerimaan penjualan — QRIS','=SUMIFS('+cashRange('amount')+','+cashRange('category')+',"sale",'+cashRange('paymentMethod')+',"QRIS",'+cashRange('direction')+',"IN",'+cashRange('status')+',"confirmed",'+cashRange('deleted')+',FALSE)','Kas masuk penjualan melalui QRIS.'],
     ['Penerimaan penjualan — Belum dipetakan','=SUMIFS('+cashRange('amount')+','+cashRange('category')+',"sale",'+cashRange('paymentMethod')+',"UNVERIFIED",'+cashRange('direction')+',"IN",'+cashRange('status')+',"confirmed",'+cashRange('deleted')+',FALSE)','Penerimaan penjualan yang metode aktualnya belum diverifikasi.'],
     ['Laba kotor','=B3-B4','Omzet dikurangi HPP batch yang ditautkan.'],
-    ['Margin kotor (%)','=IFERROR(('+valueLetterPlaceholder+') ,0)','Persentase margin kotor; formula disetel setelah lokasi baris diketahui.']
+    ['Margin kotor (%)','=IFERROR((B3-B4)/B3*100,0)','Persentase margin kotor dari omzet; tampil sebagai persen.']
   ];
   ['Indikator','Nilai','Keterangan'].forEach(function(header,i) {
     sum.getRange(2,sumCols[header],summaryRows.length,1).setValues(summaryRows.map(function(row){return [row[i]];}));
