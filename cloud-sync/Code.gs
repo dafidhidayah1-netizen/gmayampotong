@@ -82,11 +82,14 @@ function ensureTables_() {
     sh.getRange(1,1,1,sh.getLastColumn()).setFontWeight('bold').setBackground('#dff1e8');
     sh.autoResizeColumns(1, Math.min(sh.getLastColumn(), 12));
   });
+  // Apply number formats by header name, not fixed letters. This protects an
+  // existing sheet if extra columns were inserted or its columns were rearranged.
   const tx = ss.getSheetByName('Transaksi');
-  tx.getRange('H:H').setNumberFormat('"Rp" #,##0');
-  tx.getRange('I:I').setNumberFormat('"Rp" #,##0');
-  tx.getRange('J:J').setNumberFormat('#,##0.###');
-  tx.getRange('Q:R').setNumberFormat('"Rp" #,##0;[Red]-"Rp" #,##0');
+  const txCols = columnMap_(tx);
+  ['amount','paidAmount','cashEffect','effectivePaid'].forEach(function(header) {
+    tx.getRange(1,txCols[header],tx.getMaxRows(),1).setNumberFormat('"Rp" #,##0;[Red]-"Rp" #,##0');
+  });
+  tx.getRange(1,txCols.qtyKg,tx.getMaxRows(),1).setNumberFormat('#,##0.###');
 }
 
 function createAyamKasApiKey() {
@@ -246,100 +249,203 @@ function applyCashFormulas_() {
   const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Transaksi');
   const last = sh.getLastRow();
   if (last < 2) return;
+  const cols = columnMap_(sh);
+  const ref = function(name,row) { return '$' + columnLetter_(cols[name]) + row; };
   const cashFormulas = [];
   const paidFormulas = [];
   for (let r=2; r<=last; r++) {
-    cashFormulas.push(['=IF(OR($M'+r+'<>"confirmed",$O'+r+'=TRUE),0,SWITCH($E'+r+',"capital_in",$H'+r+',"sale",IF($I'+r+'="", $H'+r+',$I'+r+'),"receivable_payment",$H'+r+',"purchase",-IF($I'+r+'="", $H'+r+',$I'+r+'),"expense",-IF($I'+r+'="", $H'+r+',$I'+r+'),"capital_out",-$H'+r+',"supplier_payment",-$H'+r+',0))']);
-    paidFormulas.push(['=IF(OR($M'+r+'<>"confirmed",$O'+r+'=TRUE),0,IF(OR($E'+r+'="sale",$E'+r+'="purchase",$E'+r+'="expense"),IF($I'+r+'="", $H'+r+',$I'+r+'),0))']);
+    const inactive = 'OR(' + ref('status',r) + '<>"confirmed",' + ref('deleted',r) + '=TRUE)';
+    cashFormulas.push(['=IF(' + inactive + ',0,SWITCH(' + ref('type',r) +
+      ',"capital_in",' + ref('amount',r) +
+      ',"sale",N(' + ref('paidAmount',r) + ')' +
+      ',"receivable_payment",' + ref('amount',r) +
+      ',"purchase",-N(' + ref('paidAmount',r) + ')' +
+      ',"expense",-N(' + ref('paidAmount',r) + ')' +
+      ',"capital_out",-'+ref('amount',r) +
+      ',"supplier_payment",-'+ref('amount',r) + ',0))']);
+    paidFormulas.push(['=IF(' + inactive + ',0,IF(OR(' + ref('type',r) +
+      '="sale",' + ref('type',r) + '="purchase",' + ref('type',r) +
+      '="expense"),N(' + ref('paidAmount',r) + '),0))']);
   }
-  sh.getRange(2,17,cashFormulas.length,1).setFormulas(cashFormulas);
-  sh.getRange(2,18,paidFormulas.length,1).setFormulas(paidFormulas);
+  sh.getRange(2,cols.cashEffect,cashFormulas.length,1).setFormulas(cashFormulas);
+  sh.getRange(2,cols.effectivePaid,paidFormulas.length,1).setFormulas(paidFormulas);
 }
-
 function refreshAyamKasReports() {
   ensureTables_();
   const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const txSheet = ss.getSheetByName('Transaksi');
+  const txCols = columnMap_(txSheet);
+  const txRange = function(name) {
+    const letter = columnLetter_(txCols[name]);
+    return "'Transaksi'!$" + letter + "$2:$" + letter;
+  };
   const txs = readTransactions_().filter(function(tx){return !tx.deleted;});
-  const refs = Array.from(new Set(txs.filter(function(tx){return tx.type==='purchase' && tx.ref && tx.status==='confirmed';}).map(function(tx){return tx.ref;})));
-  const doSheet = ss.getSheetByName('KartuDO');
-  if (doSheet.getMaxRows() > 1) doSheet.getRange(2,1,doSheet.getMaxRows()-1,9).clearContent();
-  if (refs.length) {
-    const rows = refs.map(function(ref){return [ref,'','','','','','','',''];});
-    doSheet.getRange(2,1,rows.length,9).setValues(rows);
-    const formulas = refs.map(function(_,i) {
-      const r=i+2;
-      return [
-        '=IFERROR(INDEX(FILTER(Transaksi!$C$2:$C,Transaksi!$D$2:$D=$A'+r+',Transaksi!$E$2:$E="purchase",Transaksi!$M$2:$M="confirmed",Transaksi!$O$2:$O<>TRUE),1),"")',
-        '=SUMIFS(Transaksi!$J:$J,Transaksi!$D:$D,$A'+r+',Transaksi!$E:$E,"purchase",Transaksi!$M:$M,"confirmed",Transaksi!$O:$O,FALSE)',
-        '=SUMIFS(Transaksi!$H:$H,Transaksi!$D:$D,$A'+r+',Transaksi!$E:$E,"purchase",Transaksi!$M:$M,"confirmed",Transaksi!$O:$O,FALSE)',
-        '=IFERROR(D'+r+'/C'+r+',0)',
-        '=SUMIFS(Transaksi!$J:$J,Transaksi!$K:$K,$A'+r+',Transaksi!$E:$E,"sale",Transaksi!$M:$M,"confirmed",Transaksi!$O:$O,FALSE)',
-        '=C'+r+'-F'+r,
-        '=G'+r+'*E'+r,
-        '=IF(OR(C'+r+'<=0,D'+r+'<=0),"HPP BELUM LENGKAP",IF(G'+r+'<0,"STOK NEGATIF","TERHITUNG"))'
-      ];
+
+  // One row per normalized DO reference. Costs and weights are aggregated so
+  // reusing a reference cannot duplicate kg sold or silently select one cost row.
+  const refMap = new Map();
+  txs.filter(function(tx){return tx.type==='purchase' && tx.status==='confirmed' && String(tx.ref||'').trim();})
+    .forEach(function(tx) {
+      const display = String(tx.ref).trim();
+      const key = display.toLowerCase();
+      if (!refMap.has(key)) refMap.set(key, display);
     });
-    doSheet.getRange(2,2,formulas.length,8).setFormulas(formulas);
-    doSheet.getRange(2,4,refs.length,2).setNumberFormat('"Rp" #,##0');
-    doSheet.getRange(2,8,refs.length,1).setNumberFormat('"Rp" #,##0');
+  const refs = Array.from(refMap.values());
+  const doSheet = ss.getSheetByName('KartuDO');
+  const doCols = columnMap_(doSheet);
+  const oldDoRows = Math.max(doSheet.getLastRow()-1,0);
+  if (oldDoRows > 0) doSheet.getRange(2,1,oldDoRows,doSheet.getLastColumn()).clearContent();
+
+  if (refs.length) {
+    doSheet.getRange(2,doCols['Ref DO'],refs.length,1).setValues(refs.map(function(ref){return [ref];}));
+    const letter = function(name) { return columnLetter_(doCols[name]); };
+    const formulasByHeader = {};
+    const headers = ['Tanggal DO','Kg Pembelian','Nilai DO (Rp)','HPP per Kg (Rp)','Kg Terjual','Sisa Kg','Nilai Stok (Rp)','Status Stok/HPP'];
+    headers.forEach(function(header){formulasByHeader[header]=[];});
+    refs.forEach(function(_,i) {
+      const r=i+2;
+      const doRef = '$' + letter('Ref DO') + r;
+      const dateFormula = '=IFERROR(INDEX(FILTER(' + txRange('date') + ',' +
+        txRange('ref') + '=' + doRef + ',' + txRange('type') + '="purchase",' +
+        txRange('status') + '="confirmed",' + txRange('deleted') + '<>TRUE),1),"")';
+      const kgFormula = '=SUMIFS(' + txRange('qtyKg') + ',' + txRange('ref') + ',' + doRef +
+        ',' + txRange('type') + ',"purchase",' + txRange('status') + ',"confirmed",' +
+        txRange('deleted') + ',"<>TRUE")';
+      const costFormula = '=SUMIFS(' + txRange('amount') + ',' + txRange('ref') + ',' + doRef +
+        ',' + txRange('type') + ',"purchase",' + txRange('status') + ',"confirmed",' +
+        txRange('deleted') + ',"<>TRUE")';
+      const soldFormula = '=SUMIFS(' + txRange('qtyKg') + ',' + txRange('batchRef') + ',' + doRef +
+        ',' + txRange('type') + ',"sale",' + txRange('status') + ',"confirmed",' +
+        txRange('deleted') + ',"<>TRUE")';
+      formulasByHeader['Tanggal DO'].push([dateFormula]);
+      formulasByHeader['Kg Pembelian'].push([kgFormula]);
+      formulasByHeader['Nilai DO (Rp)'].push([costFormula]);
+      formulasByHeader['HPP per Kg (Rp)'].push(['=IFERROR(' + letter('Nilai DO (Rp)') + r + '/' + letter('Kg Pembelian') + r + ',0)']);
+      formulasByHeader['Kg Terjual'].push([soldFormula]);
+      formulasByHeader['Sisa Kg'].push(['=' + letter('Kg Pembelian') + r + '-' + letter('Kg Terjual') + r]);
+      formulasByHeader['Nilai Stok (Rp)'].push(['=MAX(0,' + letter('Sisa Kg') + r + ')*' + letter('HPP per Kg (Rp)') + r]);
+      formulasByHeader['Status Stok/HPP'].push(['=IF(OR(' + letter('Kg Pembelian') + r + '<=0,' +
+        letter('Nilai DO (Rp)') + r + '<=0),"HPP BELUM LENGKAP",IF(' +
+        letter('Sisa Kg') + r + '<0,"STOK NEGATIF","TERHITUNG"))']);
+    });
+    Object.keys(formulasByHeader).forEach(function(header) {
+      doSheet.getRange(2,doCols[header],refs.length,1).setFormulas(formulasByHeader[header]);
+    });
+    ['Nilai DO (Rp)','HPP per Kg (Rp)','Nilai Stok (Rp)'].forEach(function(header) {
+      doSheet.getRange(2,doCols[header],refs.length,1).setNumberFormat('"Rp" #,##0;[Red]-"Rp" #,##0');
+    });
+    ['Kg Pembelian','Kg Terjual','Sisa Kg'].forEach(function(header) {
+      doSheet.getRange(2,doCols[header],refs.length,1).setNumberFormat('#,##0.###');
+    });
   }
 
   const val = ss.getSheetByName('Validasi');
-  if (val.getMaxRows() > 1) val.getRange(2,1,val.getMaxRows()-1,6).clearContent();
+  const valCols = columnMap_(val);
+  const oldValRows = Math.max(val.getLastRow()-1,0);
+  if (oldValRows > 0) val.getRange(2,1,oldValRows,val.getLastColumn()).clearContent();
   const warnings = [];
   const purchases = new Map();
   txs.filter(function(tx){return tx.type==='purchase' && tx.status==='confirmed';}).forEach(function(p) {
-    if (p.ref) purchases.set(p.ref.trim().toLowerCase(), p);
+    const displayRef = String(p.ref||'').trim();
+    if (!displayRef) return;
+    const key = displayRef.toLowerCase();
+    if (!purchases.has(key)) {
+      purchases.set(key,{id:p.id,date:p.date,ref:displayRef,qtyKg:0,amount:0,rows:0});
+    }
+    const batch = purchases.get(key);
+    batch.qtyKg += Math.max(number_(p.qtyKg),0);
+    batch.amount += Math.max(number_(p.amount),0);
+    batch.rows += 1;
+    if (String(p.date) < String(batch.date)) batch.date = p.date;
   });
+
   txs.forEach(function(tx) {
-    if (tx.status !== 'confirmed') warnings.push(['PERIKSA','DRAF',tx.id,tx.date,tx.ref,'Transaksi masih draf; belum boleh masuk laporan final.']);
-    if (tx.type==='purchase' && (!(number_(tx.qtyKg)>0) || !tx.ref)) warnings.push(['TINGGI','HPP',tx.id,tx.date,tx.ref,'Pembelian DO belum memiliki referensi DO atau berat kg yang valid.']);
-    if (tx.type==='sale' && tx.status==='confirmed') {
-      const p = purchases.get(String(tx.batchRef||'').trim().toLowerCase());
-      if (!(number_(tx.qtyKg)>0)) warnings.push(['TINGGI','HPP',tx.id,tx.date,tx.ref,'Penjualan tidak memiliki berat kg valid.']);
-      if (!tx.batchRef || !p) warnings.push(['TINGGI','HPP',tx.id,tx.date,tx.batchRef,'Penjualan belum tertaut ke referensi DO pembelian yang terverifikasi.']);
+    if (tx.status !== 'confirmed') {
+      warnings.push(['PERIKSA','DRAF',tx.id,tx.date,tx.ref,'Transaksi masih draf; belum boleh masuk laporan final.']);
     }
-    if (['sale','purchase','expense'].indexOf(tx.type)>=0 && (tx.paidAmount===null || tx.paidAmount===undefined || tx.paidAmount==='')) {
-      warnings.push(['PERIKSA','PEMBAYARAN',tx.id,tx.date,tx.ref,'Pembayaran tidak diisi; periksa apakah transaksi tunai atau kredit.']);
+    if (tx.status === 'confirmed' && number_(tx.amount) <= 0) {
+      warnings.push(['TINGGI','NOMINAL',tx.id,tx.date,tx.ref,'Nominal transaksi terverifikasi harus lebih besar dari nol.']);
+    }
+    if (tx.type==='purchase' && (!(number_(tx.qtyKg)>0) || !String(tx.ref||'').trim())) {
+      warnings.push(['TINGGI','HPP',tx.id,tx.date,tx.ref,'Pembelian DO belum memiliki referensi DO unik atau berat kg yang valid.']);
+    }
+    if (tx.type==='sale' && tx.status==='confirmed') {
+      const batchRef = String(tx.batchRef||'').trim().toLowerCase();
+      const batch = purchases.get(batchRef);
+      if (!(number_(tx.qtyKg)>0)) {
+        warnings.push(['TINGGI','HPP',tx.id,tx.date,tx.ref,'Penjualan tidak memiliki berat kg valid.']);
+      }
+      if (!batchRef || !batch) {
+        warnings.push(['TINGGI','HPP',tx.id,tx.date,tx.batchRef,'Penjualan belum tertaut ke referensi DO pembelian terverifikasi.']);
+      } else if (String(tx.date) < String(batch.date)) {
+        warnings.push(['TINGGI','HPP',tx.id,tx.date,tx.batchRef,'Tanggal penjualan mendahului tanggal pembelian DO; periksa tanggal dan tautannya.']);
+      }
+    }
+    if (['sale','purchase','expense'].indexOf(tx.type)>=0 &&
+        (tx.paidAmount===null || tx.paidAmount===undefined || tx.paidAmount==='')) {
+      warnings.push(['PERIKSA','PEMBAYARAN',tx.id,tx.date,tx.ref,'Nilai dibayar/diterima kosong. Sistem membaca kosong sebagai Rp0; isi jumlah aktual agar kas dan piutang/utang benar.']);
+    } else if (['sale','purchase','expense'].indexOf(tx.type)>=0 &&
+        (number_(tx.paidAmount)<0 || number_(tx.paidAmount)>number_(tx.amount))) {
+      warnings.push(['TINGGI','PEMBAYARAN',tx.id,tx.date,tx.ref,'Pembayaran harus berada antara Rp0 dan nominal transaksi.']);
     }
   });
+
   const soldByRef = {};
   txs.filter(function(tx){return tx.type==='sale' && tx.status==='confirmed';}).forEach(function(s) {
     const key = String(s.batchRef||'').trim().toLowerCase();
     soldByRef[key] = (soldByRef[key]||0) + Math.max(number_(s.qtyKg),0);
   });
-  purchases.forEach(function(p,key) {
-    const remaining = number_(p.qtyKg) - (soldByRef[key]||0);
-    if (remaining < -0.0001) warnings.push(['TINGGI','STOK',p.id,p.date,p.ref,'Kg penjualan melebihi kg pembelian DO. Periksa tautan DO, susut, dan berat.']);
+  purchases.forEach(function(batch,key) {
+    const remaining = number_(batch.qtyKg) - (soldByRef[key]||0);
+    if (remaining < -0.0001) {
+      warnings.push(['TINGGI','STOK',batch.id,batch.date,batch.ref,'Kg penjualan melebihi total kg pembelian DO. Periksa tautan DO, susut, dan basis berat.']);
+    }
   });
   if (warnings.length) val.getRange(2,1,warnings.length,6).setValues(warnings);
 
   const sum = ss.getSheetByName('Ringkasan');
-  if (sum.getMaxRows() > 1) sum.getRange(2,1,sum.getMaxRows()-1,3).clearContent();
+  const sumCols = columnMap_(sum);
+  const oldSumRows = Math.max(sum.getLastRow()-1,0);
+  if (oldSumRows > 0) sum.getRange(2,1,oldSumRows,sum.getLastColumn()).clearContent();
+  const doRange = function(name) {
+    const letter = columnLetter_(doCols[name]);
+    return "'KartuDO'!$" + letter + "$2:$" + letter + "$1000";
+  };
+  const valRange = function(name) {
+    const letter = columnLetter_(valCols[name]);
+    return "'Validasi'!$" + letter + "$2:$" + letter;
+  };
   const summaryRows = [
-    ['Saldo kas tercatat','=SUM(Transaksi!Q2:Q)','Berdasarkan transaksi terverifikasi dan pembayaran yang tercatat; cocokkan dengan kas/bank nyata.'],
-    ['Omzet penjualan','=SUMIFS(Transaksi!H:H,Transaksi!E:E,"sale",Transaksi!M:M,"confirmed",Transaksi!O:O,FALSE)','Penjualan bruto terverifikasi, bukan selalu uang yang sudah diterima.'],
-    ['HPP penjualan (estimasi basis kg beli)','=SUMPRODUCT(KartuDO!E2:E1000,KartuDO!F2:F1000)','Asumsi kg beli dan kg terjual berada pada basis yang sama. Belum memasukkan rendemen karkas jika berat berubah setelah pemotongan.'],
-    ['Biaya operasional','=SUMIFS(Transaksi!H:H,Transaksi!E:E,"expense",Transaksi!M:M,"confirmed",Transaksi!O:O,FALSE)','Biaya yang diinput sebagai expense; cek agar gaji/biaya potong tidak dicatat ganda.'],
-    ['Laba/rugi sementara','=B3-B4-B5','Omzet - HPP - biaya operasional. Gunakan sebagai final hanya jika semua peringatan HPP telah diselesaikan.'],
-    ['Status laba','=IF(COUNTIF(Validasi!B2:B,"HPP")>0,"SEMENTARA — PERIKSA HPP","PERIKSA TUTUP BUKU")','Status otomatis untuk mencegah laba dianggap final saat HPP belum lengkap.'],
-    ['Stok tercatat (kg)','=SUM(KartuDO!G2:G1000)','Kg pembelian terverifikasi dikurangi kg penjualan tertaut. Belum menghitung susut jika tidak dicatat terpisah.'],
-    ['Nilai persediaan tersisa','=SUM(KartuDO!H2:H1000)','Stok sisa × HPP/kg per DO, pada basis berat yang sama.'],
-    ['Piutang agregat','=MAX(0,SUMIFS(Transaksi!H:H,Transaksi!E:E,"sale",Transaksi!M:M,"confirmed",Transaksi!O:O,FALSE)-SUMIFS(Transaksi!R:R,Transaksi!E:E,"sale",Transaksi!M:M,"confirmed",Transaksi!O:O,FALSE)-SUMIFS(Transaksi!H:H,Transaksi!E:E,"receivable_payment",Transaksi!M:M,"confirmed",Transaksi!O:O,FALSE))','Estimasi agregat. Belum rekonsiliasi per faktur karena pembayaran piutang belum wajib tertaut ke invoice.'],
-    ['Utang DO agregat','=MAX(0,SUMIFS(Transaksi!H:H,Transaksi!E:E,"purchase",Transaksi!M:M,"confirmed",Transaksi!O:O,FALSE)-SUMIFS(Transaksi!R:R,Transaksi!E:E,"purchase",Transaksi!M:M,"confirmed",Transaksi!O:O,FALSE)-SUMIFS(Transaksi!H:H,Transaksi!E:E,"supplier_payment",Transaksi!M:M,"confirmed",Transaksi!O:O,FALSE))','Estimasi agregat. Belum rekonsiliasi per faktur supplier/DO.'],
-    ['Jumlah transaksi draf','=COUNTIFS(Transaksi!M:M,"draft",Transaksi!O:O,FALSE)','Selesaikan verifikasi sebelum tutup periode.'],
-    ['Jumlah peringatan','=COUNTA(Validasi!A2:A)','Buka lembar Validasi untuk melihat hal yang perlu dibenahi.']
+    ['Saldo kas tercatat','=SUM(' + txRange('cashEffect') + ')','Berdasarkan pembayaran aktual yang tercatat pada transaksi terverifikasi; cocokkan dengan kas dan rekening bank.'],
+    ['Omzet penjualan','=SUMIFS(' + txRange('amount') + ',' + txRange('type') + ',"sale",' + txRange('status') + ',"confirmed",' + txRange('deleted') + ',"<>TRUE")','Omzet penjualan terverifikasi; tidak sama dengan kas yang sudah diterima.'],
+    ['HPP penjualan (basis kg sama)','=SUMPRODUCT(' + doRange('HPP per Kg (Rp)') + ',' + doRange('Kg Terjual') + ')','Valid hanya jika kg pembelian dan kg penjualan memakai basis yang sama. Jika beli ayam hidup dan jual karkas, catat rendemen/hasil karkas sebelum memakai angka ini sebagai HPP final.'],
+    ['Biaya operasional','=SUMIFS(' + txRange('amount') + ',' + txRange('type') + ',"expense",' + txRange('status') + ',"confirmed",' + txRange('deleted') + ',"<>TRUE")','Biaya operasional yang dicatat; pastikan gaji/biaya potong tidak dihitung dua kali.'],
+    ['Laba/rugi sementara','=B3-B4-B5','Omzet - HPP - biaya operasional. Angka tetap sementara bila masih ada peringatan HPP, basis berat, stok, atau tutup buku.'],
+    ['Status laba','=IF(COUNTIF(' + valRange('Kategori') + ',"HPP")>0,"SEMENTARA — PERIKSA HPP",IF(COUNTIF(' + valRange('Kategori') + ',"STOK")>0,"SEMENTARA — PERIKSA STOK","PERIKSA TUTUP BUKU"))','Status otomatis untuk mencegah laba dianggap final saat HPP/stok belum lengkap.'],
+    ['Stok tercatat (kg)','=SUM(' + doRange('Sisa Kg') + ')','Kg pembelian dikurangi kg penjualan tertaut, dengan asumsi basis berat sama dan susut dicatat.'],
+    ['Nilai persediaan tersisa','=SUM(' + doRange('Nilai Stok (Rp)') + ')','Stok sisa × HPP per kg pada basis berat yang sama.'],
+    ['Piutang agregat','=MAX(0,SUMIFS(' + txRange('amount') + ',' + txRange('type') + ',"sale",' + txRange('status') + ',"confirmed",' + txRange('deleted') + ',"<>TRUE")-SUMIFS(' + txRange('effectivePaid') + ',' + txRange('type') + ',"sale",' + txRange('status') + ',"confirmed",' + txRange('deleted') + ',"<>TRUE")-SUMIFS(' + txRange('amount') + ',' + txRange('type') + ',"receivable_payment",' + txRange('status') + ',"confirmed",' + txRange('deleted') + ',"<>TRUE"))','Estimasi agregat, belum rincian faktur pelanggan; tautkan pembayaran ke invoice untuk aging yang akurat.'],
+    ['Utang DO agregat','=MAX(0,SUMIFS(' + txRange('amount') + ',' + txRange('type') + ',"purchase",' + txRange('status') + ',"confirmed",' + txRange('deleted') + ',"<>TRUE")-SUMIFS(' + txRange('effectivePaid') + ',' + txRange('type') + ',"purchase",' + txRange('status') + ',"confirmed",' + txRange('deleted') + ',"<>TRUE")-SUMIFS(' + txRange('amount') + ',' + txRange('type') + ',"supplier_payment",' + txRange('status') + ',"confirmed",' + txRange('deleted') + ',"<>TRUE"))','Estimasi agregat, belum rincian faktur supplier/DO; tautkan pembayaran ke tagihan yang benar.'],
+    ['Jumlah transaksi draf','=COUNTIFS(' + txRange('status') + ',"draft",' + txRange('deleted') + ',"<>TRUE")','Selesaikan pemeriksaan dan konfirmasi sebelum tutup periode.'],
+    ['Jumlah peringatan','=COUNTA(' + valRange('Level') + ')','Buka lembar Validasi untuk meninjau dan menyelesaikan temuan.']
   ];
   sum.getRange(2,1,summaryRows.length,3).setValues(summaryRows.map(function(r){return [r[0],r[1],r[2]];}));
-  summaryRows.forEach(function(r,i){if(String(r[1]).charAt(0)==='=') sum.getRange(i+2,2).setFormula(r[1]);});
-  sum.getRange(2,2,summaryRows.length,1).setNumberFormat('"Rp" #,##0;[Red]-"Rp" #,##0');
-  sum.getRange(8,2,1,1).setNumberFormat('#,##0.###');
+  summaryRows.forEach(function(r,i) {
+    if (String(r[1]).charAt(0)==='=') sum.getRange(i+2,sumCols['Nilai']).setFormula(r[1]);
+  });
+  sum.getRange(2,sumCols['Nilai'],5,1).setNumberFormat('"Rp" #,##0;[Red]-"Rp" #,##0');
+  sum.getRange(8,sumCols['Nilai'],1,1).setNumberFormat('#,##0.###');
+  sum.getRange(9,sumCols['Nilai'],3,1).setNumberFormat('"Rp" #,##0;[Red]-"Rp" #,##0');
   sum.getRange(2,1,summaryRows.length,3).setWrap(true);
-  sum.setColumnWidth(1,240); sum.setColumnWidth(2,190); sum.setColumnWidth(3,460);
-  val.setColumnWidth(1,95); val.setColumnWidth(2,110); val.setColumnWidth(6,520);
-  doSheet.setColumnWidth(1,140); doSheet.setColumnWidth(9,170);
+  sum.setColumnWidth(sumCols['Indikator'],240);
+  sum.setColumnWidth(sumCols['Nilai'],190);
+  sum.setColumnWidth(sumCols['Keterangan'],520);
+  val.setColumnWidth(valCols['Level'],95);
+  val.setColumnWidth(valCols['Kategori'],115);
+  val.setColumnWidth(valCols['Peringatan'],560);
+  doSheet.setColumnWidth(doCols['Ref DO'],140);
+  doSheet.setColumnWidth(doCols['Status Stok/HPP'],180);
 }
-
 function backupAyamKasSpreadsheet() {
   const result = backup_();
   SpreadsheetApp.getUi().alert('Cadangan selesai', result.name + '\n' + result.url, SpreadsheetApp.getUi().ButtonSet.OK);
@@ -357,6 +463,23 @@ function backup_() {
 function appendLog_(action,id,device,details) {
   const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('LogSinkronisasi');
   if (sh) sh.appendRow([new Date(),action,id,device,details]);
+}
+
+function columnMap_(sheet) {
+  const headers = sheet.getRange(1,1,1,sheet.getLastColumn()).getDisplayValues()[0].map(String);
+  const result = {};
+  headers.forEach(function(header,index){ result[header] = index + 1; });
+  return result;
+}
+function columnLetter_(column) {
+  let result = '';
+  let n = Number(column);
+  while (n > 0) {
+    const remainder = (n - 1) % 26;
+    result = String.fromCharCode(65 + remainder) + result;
+    n = Math.floor((n - 1) / 26);
+  }
+  return result;
 }
 function rowToObject_(headers,row) {
   const o = {};
