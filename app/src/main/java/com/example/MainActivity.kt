@@ -426,7 +426,6 @@ fun AyamKasApp(viewModel: AyamKasViewModel) {
                     onExportCsv = { viewModel.exportCsv(context) },
                     onImportJson = { viewModel.importJson(it) },
                     onResetData = { viewModel.resetAllData() },
-                    onRestoreDefaultDrafts = { viewModel.restoreDefaultData() },
                     onShareWhatsApp = { viewModel.shareSummaryViaWhatsApp(context) },
                     cloudUrl = cloudUrl,
                     cloudApiKey = cloudApiKey,
