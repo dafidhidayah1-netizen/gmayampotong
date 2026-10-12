@@ -14,7 +14,7 @@ const SHEETS = {
   ],
   AKP_Karyawan: ['id','nama','jabatan','tarifHarian','tarifLemburPerJam','aktif','updatedAt','deleted'],
   AKP_Absensi: ['id','tanggal','karyawanId','namaKaryawan','status','jamMasuk','jamPulang','lemburJam','catatan','updatedAt','deleted'],
-  AKP_Penggajian: ['id','periode','karyawanId','namaKaryawan','hariHadir','lemburJam','tarifHarian','tarifLemburPerJam','gajiPokok','uangLembur','bonus','potongan','total','statusBayar','updatedAt','deleted'],
+  AKP_Penggajian: ['id','periode','karyawanId','namaKaryawan','hariHadir','lemburJam','tarifHarian','tarifLemburPerJam','gajiPokok','uangLembur','bonus','potongan','total','statusPersetujuan','statusBayar','ledgerTransactionId','updatedAt','deleted'],
   AKP_AuditLog: ['waktu','user','aksi','sheet','recordId','detail'],
   AKP_Ringkasan: ['indikator','nilai','rumus_dan_penjelasan','diperbarui']
 };
@@ -97,6 +97,7 @@ function dispatch_(action, payload) {
       return {ok:true};
     case 'savePayroll':
       saveRecord_('AKP_Penggajian', payload, 'id');
+      recalculate_();
       return {ok:true};
     case 'backup':
       return backup_();
@@ -300,42 +301,138 @@ function saveTransaction_(payload) {
 function saveRecord_(sheetName, input, idField) {
   const obj = Object.assign({},input || {});
   const lock = LockService.getScriptLock();
+  let saved;
   lock.waitLock(15000);
   try {
     const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(sheetName);
     const headers = headers_(sh);
-    const id = String(obj[idField] || Utilities.getUuid());
-    obj.id = id; obj.updatedAt = new Date().toISOString(); obj.deleted = false;
+    const data = list_(sheetName,true);
+    let id = String(obj[idField] || '');
+    // One attendance row per employee/day; one payroll row per employee/month.
+    if (!id && sheetName === 'AKP_Absensi') {
+      const match = data.find(row => String(row.karyawanId) === String(obj.karyawanId || '') &&
+        String(row.tanggal) === String(obj.tanggal || '') && String(row.deleted) !== 'true');
+      if (match) id = String(match.id);
+    }
+    if (!id && sheetName === 'AKP_Penggajian') {
+      const match = data.find(row => String(row.karyawanId) === String(obj.karyawanId || '') &&
+        String(row.periode) === String(obj.periode || '') && String(row.deleted) !== 'true');
+      if (match) id = String(match.id);
+    }
+    id = id || Utilities.getUuid();
+    obj[idField] = id;
+    obj.id = id;
+    obj.updatedAt = new Date().toISOString();
+    obj.deleted = false;
+
     if (sheetName === 'AKP_Karyawan') {
       if (!String(obj.nama || '').trim()) throw new Error('Nama karyawan wajib diisi.');
-      if (Number(obj.tarifHarian || 0) < 0 || Number(obj.tarifLemburPerJam || 0) < 0) throw new Error('Tarif tidak boleh negatif.');
-    }
-    if (sheetName === 'AKP_Penggajian') {
-      obj.hariHadir = Number(obj.hariHadir || 0);
-      obj.lemburJam = Number(obj.lemburJam || 0);
+      if (Number(obj.tarifHarian || 0) < 0 || Number(obj.tarifLemburPerJam || 0) < 0) {
+        throw new Error('Tarif tidak boleh negatif.');
+      }
       obj.tarifHarian = Number(obj.tarifHarian || 0);
       obj.tarifLemburPerJam = Number(obj.tarifLemburPerJam || 0);
+      obj.aktif = obj.aktif !== false && String(obj.aktif).toLowerCase() !== 'false';
+    }
+
+    if (sheetName === 'AKP_Absensi') {
+      if (!obj.tanggal || !obj.karyawanId) throw new Error('Tanggal dan karyawan wajib dipilih.');
+      const employee = list_('AKP_Karyawan').find(row => String(row.id) === String(obj.karyawanId));
+      if (!employee) throw new Error('Karyawan tidak ditemukan atau sudah diarsipkan.');
+      const statuses = ['HADIR','IZIN','SAKIT','ALPHA','LIBUR'];
+      obj.status = String(obj.status || 'HADIR').toUpperCase();
+      if (!statuses.includes(obj.status)) throw new Error('Status absensi tidak valid.');
+      obj.namaKaryawan = employee.nama;
+      obj.lemburJam = Math.max(0,Number(obj.lemburJam || 0));
+      if (obj.lemburJam > 24) throw new Error('Jam lembur tidak boleh lebih dari 24 jam sehari.');
+      if (obj.status !== 'HADIR') obj.lemburJam = 0;
+    }
+
+    if (sheetName === 'AKP_Penggajian') {
+      obj.periode = String(obj.periode || '');
+      if (!/^\d{4}-\d{2}$/.test(obj.periode)) throw new Error('Periode penggajian harus YYYY-MM.');
+      const employee = list_('AKP_Karyawan').find(row => String(row.id) === String(obj.karyawanId));
+      if (!employee) throw new Error('Pilih karyawan yang terdaftar.');
+      obj.namaKaryawan = employee.nama;
+      obj.tarifHarian = Math.max(0,Number(employee.tarifHarian || 0));
+      obj.tarifLemburPerJam = Math.max(0,Number(employee.tarifLemburPerJam || 0));
+
+      const attendance = list_('AKP_Absensi').filter(row =>
+        String(row.karyawanId) === String(obj.karyawanId) &&
+        String(row.tanggal || '').slice(0,7) === obj.periode
+      );
+      // Deduplicate by date in case the old ledger already contains duplicate attendance rows.
+      const byDate = {};
+      attendance.forEach(row => {
+        const date = String(row.tanggal || '');
+        if (!date) return;
+        if (!byDate[date] || String(row.updatedAt || '') > String(byDate[date].updatedAt || '')) byDate[date] = row;
+      });
+      const approvedDays = Object.values(byDate).filter(row => String(row.status).toUpperCase() === 'HADIR');
+      obj.hariHadir = approvedDays.length;
+      obj.lemburJam = approvedDays.reduce((sum,row)=>sum+Math.max(0,Number(row.lemburJam || 0)),0);
       obj.gajiPokok = obj.hariHadir * obj.tarifHarian;
-      obj.uangLembur = Number(obj.uangLembur || 0);
+      obj.uangLembur = obj.lemburJam * obj.tarifLemburPerJam;
       obj.bonus = Number(obj.bonus || 0);
       obj.potongan = Number(obj.potongan || 0);
+      if (!Number.isFinite(obj.bonus) || !Number.isFinite(obj.potongan) || obj.bonus < 0 || obj.potongan < 0) {
+        throw new Error('Bonus dan potongan harus berupa angka tidak negatif.');
+      }
       obj.total = obj.gajiPokok + obj.uangLembur + obj.bonus - obj.potongan;
       if (obj.total < 0) throw new Error('Total gaji tidak boleh negatif.');
+      obj.statusPersetujuan = String(obj.statusPersetujuan || 'DRAF').toUpperCase() === 'DISETUJUI' ? 'DISETUJUI' : 'DRAF';
+      obj.statusBayar = String(obj.statusBayar || 'BELUM DIBAYAR').toUpperCase() === 'DIBAYAR' ? 'DIBAYAR' : 'BELUM DIBAYAR';
+      if (obj.statusBayar === 'DIBAYAR' && obj.statusPersetujuan !== 'DISETUJUI') {
+        throw new Error('Gaji harus disetujui sebelum ditandai sudah dibayar.');
+      }
+      obj.ledgerTransactionId = 'PAYROLL-' + id;
     }
-    let targetRow = 0;
-    const data = list_(sheetName,true);
-    const i = data.findIndex(r => String(r.id) === id);
-    if (i >= 0) targetRow = i+2;
-    const row = headers.map(h => obj[h] === undefined ? '' : obj[h]);
+
+    const index = data.findIndex(row => String(row.id) === id);
+    const targetRow = index >= 0 ? index + 2 : 0;
+    const row = headers.map(header => obj[header] === undefined ? '' : obj[header]);
     if (targetRow) sh.getRange(targetRow,1,1,headers.length).setValues([row]);
     else sh.appendRow(row);
     audit_('SAVE',sheetName,id,JSON.stringify({record:id}));
-    return {ok:true,id:id};
+    saved = {ok:true,id:id,record:obj};
   } finally {
     lock.releaseLock();
   }
+
+  // The generated expense is upserted only after the main payroll lock is released.
+  if (sheetName === 'AKP_Penggajian') syncPayrollExpense_(saved.record);
+  return {ok:true,id:saved.id};
 }
 
+function syncPayrollExpense_(payroll) {
+  const transactionId = String(payroll.ledgerTransactionId || ('PAYROLL-' + payroll.id));
+  const amount = Number(payroll.total || 0);
+  const existing = list_('AKP_Transaksi',true).find(row => String(row.id) === transactionId);
+  if (amount <= 0) {
+    if (existing && String(existing.deleted) !== 'true') softDelete_('AKP_Transaksi',transactionId);
+    return;
+  }
+  const approved = String(payroll.statusPersetujuan || '').toUpperCase() === 'DISETUJUI';
+  const paid = String(payroll.statusBayar || '').toUpperCase() === 'DIBAYAR';
+  const model = normalizeTransaction_({
+    id:transactionId,
+    date:String(payroll.periode) + '-01',
+    type:'expense',
+    category:'Gaji',
+    ref:'PAY-' + String(payroll.id),
+    description:'Gaji ' + String(payroll.namaKaryawan || 'Karyawan') + ' periode ' + String(payroll.periode),
+    amount:amount,
+    paidAmount:paid ? amount : 0,
+    party:String(payroll.namaKaryawan || ''),
+    notes:'Dihasilkan dari Penggajian ID ' + String(payroll.id) + '; persetujuan=' + (approved ? 'DISETUJUI' : 'DRAF'),
+    status:approved ? 'confirmed' : 'draft',
+    source:'payroll',
+    updatedAt:String(payroll.updatedAt || new Date().toISOString())
+  });
+  const result = upsertModel_(model);
+  if (result.conflict) throw new Error('Transaksi gaji pada ledger lebih baru. Muat ulang data payroll sebelum mengubah.');
+  audit_('SYNC_PAYROLL','AKP_Transaksi',transactionId,'Pengeluaran gaji tersinkron dari penggajian '+payroll.id);
+}
 function syncTransactions_(payload) {
   setup_();
   const incoming = Array.isArray(payload.transactions) ? payload.transactions : [];
