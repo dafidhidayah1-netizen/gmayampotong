@@ -666,7 +666,7 @@ class AyamKasViewModel(application: Application) : AndroidViewModel(application)
             runCatching {
                 val jsonStr = repository.generateJsonExport(
                     transactions = allTransactions.value,
-                    deletedTransactions = allDeleted.value,
+                    deletedTransactions = repository.allDeleted.first(),
                     cashTransactions = repository.cashTransactions.first(),
                     cashFlows = repository.cashFlows.first(),
                     externalLoans = repository.externalLoans.first(),
@@ -677,6 +677,7 @@ class AyamKasViewModel(application: Application) : AndroidViewModel(application)
                 val today = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())
                 val fileName = "ayamkaspro-cadangan-lengkap-$today.json"
                 saveAndShareFile(context, fileName, jsonStr, "application/json")
+                    ?: throw IllegalStateException("File cadangan tidak berhasil dibuat atau dibagikan")
             }.onSuccess {
                 _userMessage.emit("Cadangan lokal lengkap dibuat. Simpan file JSON di lokasi aman.")
             }.onFailure {
