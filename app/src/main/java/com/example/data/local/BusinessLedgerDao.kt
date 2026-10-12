@@ -26,6 +26,12 @@ interface BusinessLedgerDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun saveCashTransaction(transaction: CashTransaction)
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun saveCashTransactions(transactions: List<CashTransaction>)
+
+    @Query("DELETE FROM cash_transactions")
+    suspend fun clearAllCashTransactions()
+
     @Query("DELETE FROM cash_transactions WHERE sourceTransactionId = :sourceId")
     suspend fun deleteCashForSource(sourceId: String)
 
@@ -38,6 +44,12 @@ interface BusinessLedgerDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun saveCashFlow(cashFlow: CashFlow)
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun saveCashFlows(cashFlows: List<CashFlow>)
+
+    @Query("DELETE FROM cash_flows")
+    suspend fun clearAllCashFlows()
+
     @Query("DELETE FROM cash_flows WHERE id = :id")
     suspend fun deleteCashFlow(id: String)
 
@@ -46,6 +58,12 @@ interface BusinessLedgerDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun saveExternalLoan(loan: ExternalLoan)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun saveExternalLoans(loans: List<ExternalLoan>)
+
+    @Query("DELETE FROM external_loans")
+    suspend fun clearAllExternalLoans()
 
     @Query("DELETE FROM external_loans WHERE id = :id")
     suspend fun deleteExternalLoan(id: String)
@@ -56,6 +74,12 @@ interface BusinessLedgerDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun saveEmployee(employee: EmployeeRecord)
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun saveEmployees(employees: List<EmployeeRecord>)
+
+    @Query("DELETE FROM employees")
+    suspend fun clearAllEmployees()
+
     @Query("SELECT * FROM employees WHERE id = :id LIMIT 1")
     suspend fun getEmployee(id: String): EmployeeRecord?
 
@@ -65,6 +89,12 @@ interface BusinessLedgerDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun saveAttendance(attendance: AttendanceRecord)
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun saveAttendances(records: List<AttendanceRecord>)
+
+    @Query("DELETE FROM attendance_records")
+    suspend fun clearAllAttendance()
+
     @Query("SELECT * FROM attendance_records WHERE employeeId = :employeeId AND workDate BETWEEN :fromDate AND :toDate ORDER BY workDate")
     suspend fun getAttendanceForPeriod(employeeId: String, fromDate: String, toDate: String): List<AttendanceRecord>
 
@@ -73,6 +103,12 @@ interface BusinessLedgerDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun savePayroll(payroll: PayrollRecord)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun savePayrollRecords(payrollRecords: List<PayrollRecord>)
+
+    @Query("DELETE FROM payroll_records")
+    suspend fun clearAllPayroll()
 
     @Query("DELETE FROM payroll_records WHERE id = :id")
     suspend fun deletePayroll(id: String)
