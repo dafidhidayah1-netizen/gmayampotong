@@ -273,7 +273,7 @@ function upsertModel_(model) {
     const nowMs = Date.parse(model.updatedAt || '') || 0;
     const existingMs = existing ? (Date.parse(existing.updatedAt || '') || 0) : 0;
     if (existing && existingMs > nowMs) return {written:false,conflict:true};
-    const statusPayment = ['sale','purchase'].includes(model.type)
+    const statusPayment = ['sale','purchase','expense'].includes(model.type)
       ? ((model.paidAmount || 0) >= model.amount ? 'LUNAS' : ((model.paidAmount || 0) > 0 ? 'SEBAGIAN' : 'BELUM BAYAR'))
       : '—';
     const withCalculatedPayment = Object.assign({},model,{
@@ -428,7 +428,8 @@ function recalculate_() {
     const saleFormula = '=IF(AND('+typeCell+'="sale",'+statusCell+'="confirmed",'+deletedCell+'<>TRUE),IF(OR('+batchCell+'="",COUNTIFS($'+type+'$2:$'+type+',"purchase",$'+ref+'$2:$'+ref+','+batchCell+',$'+status+'$2:$'+status+',"confirmed",$'+deleted+'$2:$'+deleted+',"<>TRUE")<>1),0,IFERROR('+qtyCell+'*INDEX($'+hppUnit+'$2:$'+hppUnit+',MATCH('+batchCell+',$'+ref+'$2:$'+ref+',0)),0)),"")';
     const grossFormula = '=IF(AND('+typeCell+'="sale",'+statusCell+'="confirmed",'+deletedCell+'<>TRUE),IF('+hppSale+row+'>0,'+amountCell+'-'+hppSale+row+',""),"")';
     const stockFormula = '=IF(AND('+typeCell+'="purchase",'+statusCell+'="confirmed",'+deletedCell+'<>TRUE),IF('+outputCell+'>0,'+outputCell+','+qtyCell+')-SUMIFS($'+qty+'$2:$'+qty+',$'+type+'$2:$'+type+',"sale",$'+batch+'$2:$'+batch+','+refCell+',$'+status+'$2:$'+status+',"confirmed",$'+deleted+'$2:$'+deleted+',"<>TRUE"),"")';
-    const statusFormula = '=IF('+deletedCell+'=TRUE,"DIARSIPKAN",IF('+statusCell+'<>"confirmed","DRAF",IF('+typeCell+'="purchase",IF('+hppUnit+row+'<=0,"HPP BELUM LENGKAP",IF('+stock+row+'<0,"STOK MINUS","OK")),IF('+typeCell+'="sale",IF(OR('+qtyCell+'<=0,'+batchCell+'="",'+hppSale+row+'<=0),"HPP BELUM LENGKAP","OK"),IF(AND('+typeCell+'="expense",'+batchCell+'<>"",COUNTIFS($'+type+'$2:$'+type+',"purchase",$'+ref+'$2:$'+ref+','+batchCell+',$'+status+'$2:$'+status+',"confirmed",$'+deleted+'$2:$'+deleted+',"<>TRUE")<>1),"BIAYA BATCH TANPA DO","OK")))))';
+    const purchaseRefCount = 'COUNTIFS($'+type+'$2:$'+type+',"purchase",$'+ref+'$2:$'+ref+','+refCell+',$'+status+'$2:$'+status+',"confirmed",$'+deleted+'$2:$'+deleted+',"<>TRUE")';
+    const statusFormula = '=IF('+deletedCell+'=TRUE,"DIARSIPKAN",IF('+statusCell+'<>"confirmed","DRAF",IF('+typeCell+'="purchase",IF('+refCell+'="","REF DO KOSONG",IF('+purchaseRefCount+'>1,"REF DO GANDA",IF('+hppUnit+row+'<=0,"HPP BELUM LENGKAP",IF('+outputCell+'="","ASUMSI KG MASUK",IF('+stock+row+'<0,"STOK MINUS","OK"))))),IF('+typeCell+'="sale",IF(OR('+qtyCell+'<=0,'+batchCell+'="",'+hppSale+row+'<=0),"HPP BELUM LENGKAP","OK"),IF(AND('+typeCell+'="expense",'+batchCell+'<>"",COUNTIFS($'+type+'$2:$'+type+',"purchase",$'+ref+'$2:$'+ref+','+batchCell+',$'+status+'$2:$'+status+',"confirmed",$'+deleted+'$2:$'+deleted+',"<>TRUE")<>1),"BIAYA BATCH TANPA DO","OK")))))';
     sh.getRange(row,idx.hppPerKg).setFormula(unitFormula);
     sh.getRange(row,idx.hppJual).setFormula(saleFormula);
     sh.getRange(row,idx.labaKotor).setFormula(grossFormula);
@@ -446,13 +447,18 @@ function updateSummary_() {
   const h = headers_(tx), ix={};
   h.forEach((name,i)=>ix[name]=i+1);
   const L = n => colLetter_(ix[n]);
-  const t = 'Transaksi!';
+  const t = 'AKP_Transaksi!';
   const r = n => t+'$'+L(n)+'$2:$'+L(n);
   const typ=r('jenis'), amount=r('nominal'), paid=r('dibayar'), kg=r('qtyKg'), batch=r('batchRef'),
         ver=r('status'), del=r('deleted'), hpp=r('hppJual'), kgRemain=r('kgSisa');
   const confirmed = ver+', "confirmed", '+del+', "<>TRUE"';
   const sum = (field, type) => '=SUMIFS('+r(field)+','+typ+',"'+type+'",'+confirmed+')';
   const countHppMissing = '=COUNTIFS('+typ+',"sale",'+ver+',"confirmed",'+del+',"<>TRUE",'+r('statusHpp')+',"HPP BELUM LENGKAP")';
+  const countDrafts = '=COUNTIF('+ver+',"draft")';
+  const countAssumedYield = '=COUNTIFS('+typ+',"purchase",'+ver+',"confirmed",'+del+',"<>TRUE",'+r('kgSiapJual')+',"" )';
+  const countNegativeStock = '=COUNTIFS('+r('statusHpp')+',"STOK MINUS",'+ver+',"confirmed",'+del+',"<>TRUE")';
+  const countDuplicateDo = '=COUNTIFS('+r('statusHpp')+',"REF DO GANDA",'+ver+',"confirmed",'+del+',"<>TRUE")';
+  const countUnlinkedBatchCost = '=COUNTIFS('+r('statusHpp')+',"BIAYA BATCH TANPA DO",'+ver+',"confirmed",'+del+',"<>TRUE")';
   const formulas = [
     ['Omzet penjualan',sum('nominal','sale'),'Jumlah nominal transaksi penjualan terverifikasi; bukan penerimaan kas.'],
     ['HPP ayam terjual','=SUMIFS('+hpp+','+typ+',"sale",'+confirmed+')','Kg terjual × HPP/kg dari DO yang ditautkan. DO yang tidak unik atau belum lengkap tidak boleh dianggap memiliki HPP valid.'],
@@ -468,7 +474,12 @@ function updateSummary_() {
     ['Kas bersih tercatat','=SUMIFS('+r('nominal')+','+typ+',"capital_in",'+confirmed+')+SUMIFS('+paid+','+typ+',"sale",'+confirmed+')+SUMIFS('+r('nominal')+','+typ+',"receivable_payment",'+confirmed+')-SUMIFS('+paid+','+typ+',"purchase",'+confirmed+')-SUMIFS('+paid+','+typ+',"expense",'+confirmed+')-SUMIFS('+r('nominal')+','+typ+',"supplier_payment",'+confirmed+')-SUMIFS('+r('nominal')+','+typ+',"capital_out",'+confirmed+')','Kas awal + kas masuk aktual − kas keluar aktual. Masukkan saldo/modal awal sebagai transaksi modal masuk; mutasi transfer antar-akun belum dihitung otomatis.'],
     ['Piutang agregat (estimasi)','=MAX(0,SUMIFS('+r('nominal')+','+typ+',"sale",'+confirmed+')-SUMIFS('+paid+','+typ+',"sale",'+confirmed+')-SUMIFS('+r('nominal')+','+typ+',"receivable_payment",'+confirmed+'))','Estimasi total semua invoice. Untuk umur piutang dan saldo per pelanggan, setiap penerimaan wajib ditautkan ke invoice terkait.'],
     ['Utang DO agregat (estimasi)','=MAX(0,SUMIFS('+r('nominal')+','+typ+',"purchase",'+confirmed+')-SUMIFS('+paid+','+typ+',"purchase",'+confirmed+')-SUMIFS('+r('nominal')+','+typ+',"supplier_payment",'+confirmed+'))','Estimasi total utang. Untuk saldo per supplier/DO, pembayaran perlu ditautkan ke invoice/DO terkait.'],
-    ['Penjualan belum lengkap HPP',countHppMissing,'Jumlah penjualan terverifikasi yang kg atau tautan DO-nya belum membuat HPP dapat dihitung. Periksa kolom statusHpp di tab Transaksi.']
+    ['Penjualan belum lengkap HPP',countHppMissing,'Jumlah penjualan terverifikasi yang kg atau tautan DO-nya belum membuat HPP dapat dihitung.'],
+    ['Transaksi draf',countDrafts,'Belum masuk ringkasan resmi sampai diverifikasi.'],
+    ['DO tanpa kg siap jual',countAssumedYield,'HPP masih memakai kg masuk sebagai asumsi. Isi berat bersih setelah potong/susut.'],
+    ['Stok negatif',countNegativeStock,'Jumlah batch dengan penjualan melebihi kg siap jual. Periksa timbang, batch dan retur.'],
+    ['Referensi DO ganda',countDuplicateDo,'Nomor DO yang tidak unik membuat alokasi HPP tidak aman.'],
+    ['Biaya batch tanpa DO valid',countUnlinkedBatchCost,'Biaya tertaut ke batch yang tidak ditemukan atau memiliki referensi ganda.']
   ];
   const rows = formulas.map(x=>[x[0],'',x[2],new Date()]);
   if (sh.getLastRow() > 1) sh.getRange(2,1,sh.getLastRow()-1,4).clearContent();
