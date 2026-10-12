@@ -104,12 +104,12 @@ footer{padding:18px 4px;color:#6b7a70;font-size:11px}
 <section id="payroll" class="hidden">
  <form class="panel" id="payform"><h2>Rekap penggajian</h2><div class="grid">
  <div><label>Periode *</label><input name="periode" type="month" required></div><div><label>Karyawan *</label><select name="karyawanId" id="payEmployee" required></select></div>
- <div><label>Hari hadir terverifikasi</label><input name="hariHadir" type="number" min="0" step="1" value="0" required></div><div><label>Jam lembur disetujui</label><input name="lemburJam" type="number" min="0" step=".5" value="0"></div>
+ <div><label>Hari hadir (dari absensi)</label><input name="hariHadir" type="number" min="0" step="1" value="0" readonly required></div><div><label>Jam lembur (dari absensi)</label><input name="lemburJam" type="number" min="0" step=".5" value="0" readonly></div>
  <div><label>Bonus disetujui (Rp)</label><input name="bonus" type="number" min="0" value="0"></div><div><label>Potongan disetujui (Rp)</label><input name="potongan" type="number" min="0" value="0"></div>
- <div><label>Status pembayaran</label><select name="statusBayar"><option>BELUM DIBAYAR</option><option>DIBAYAR</option></select></div>
+ <div><label>Persetujuan penggajian</label><select name="statusPersetujuan"><option value="DRAF">DRAF / ditinjau</option><option value="DISETUJUI">DISETUJUI</option></select></div><div><label>Status pembayaran</label><select name="statusBayar"><option value="BELUM DIBAYAR">BELUM DIBAYAR</option><option value="DIBAYAR">DIBAYAR</option></select></div>
  </div><p class="muted" id="payPreview">Gaji = hari hadir × tarif harian + jam lembur × tarif lembur/jam + bonus − potongan. Verifikasi aturan lembur, potongan, pajak dan kewajiban ketenagakerjaan secara terpisah sebelum pembayaran final.</p>
  <div class="actions"><button type="submit">Hitung & simpan rekap</button></div></form>
- <div class="panel"><h2>Riwayat gaji</h2><div class="scroll"><table><thead><tr><th>Periode</th><th>Karyawan</th><th>Hadir</th><th>Pokok</th><th>Lembur</th><th>Bonus</th><th>Potongan</th><th>Total</th><th>Status</th></tr></thead><tbody id="payrows"></tbody></table></div></div>
+ <div class="panel"><h2>Riwayat gaji</h2><div class="scroll"><table><thead><tr><th>Periode</th><th>Karyawan</th><th>Hadir</th><th>Pokok</th><th>Lembur</th><th>Bonus</th><th>Potongan</th><th>Total</th><th>Persetujuan</th><th>Status bayar</th></tr></thead><tbody id="payrows"></tbody></table></div></div>
 </section>
 
 <section id="calc" class="hidden">
@@ -159,7 +159,7 @@ function draw(){
  $('mDebt').textContent=money(metricValue('Utang DO agregat (estimasi)'))+' / '+money(metricValue('Piutang agregat (estimasi)'));
  $('connectedSheet').textContent=state.spreadsheetId?'Sheets ID: '+state.spreadsheetId:'Belum tersambung';
  $('summaryRows').innerHTML=summaryRows.map(x=>'<tr><td>'+esc(x.indikator)+'</td><td>'+esc(typeof x.nilai==='number'?Number(x.nilai).toLocaleString('id-ID',{maximumFractionDigits:3}):x.nilai)+'</td><td>'+esc(x.rumus_dan_penjelasan)+'</td></tr>').join('')||'<tr><td colspan="3">Belum ada ringkasan.</td></tr>';
- const flags=state.transactions.filter(x=>x.status==='confirmed'&&['HPP BELUM LENGKAP','STOK MINUS','BIAYA BATCH TANPA DO'].includes(String(x.statusHpp||'')));
+ const flags=state.transactions.filter(x=>x.status==='confirmed'&&['HPP BELUM LENGKAP','STOK MINUS','BIAYA BATCH TANPA DO','REF DO GANDA','REF DO KOSONG','ASUMSI KG MASUK'].includes(String(x.statusHpp||'')));
  const draftCount=state.transactions.filter(x=>x.status==='draft').length;
  const q=$('quality');if(flags.length||draftCount){q.classList.remove('hidden');q.textContent='Perlu pemeriksaan: '+flags.length+' transaksi bermasalah HPP/stok/biaya batch dan '+draftCount+' transaksi masih draf. Periksa kolom status HPP pada riwayat transaksi sebelum memakai laba sebagai angka final.';}else{q.classList.add('hidden');}
  renderTx();
@@ -169,6 +169,7 @@ function draw(){
  $('attrows').innerHTML=state.attendance.slice().reverse().map(x=>'<tr><td>'+esc(x.tanggal)+'</td><td>'+esc(x.namaKaryawan)+'</td><td>'+esc(x.status)+'</td><td>'+esc(x.jamMasuk)+'–'+esc(x.jamPulang)+'</td><td>'+esc(x.lemburJam)+'</td><td>'+esc(x.catatan)+'</td></tr>').join('')||'<tr><td colspan="6">Belum ada absensi.</td></tr>';
  $('payrows').innerHTML=state.payroll.slice().reverse().map(x=>'<tr><td>'+esc(x.periode)+'</td><td>'+esc(x.namaKaryawan)+'</td><td>'+esc(x.hariHadir)+'</td><td>'+money(x.gajiPokok)+'</td><td>'+money(x.uangLembur)+'</td><td>'+money(x.bonus)+'</td><td>'+money(x.potongan)+'</td><td>'+money(x.total)+'</td><td>'+esc(x.statusBayar)+'</td></tr>').join('')||'<tr><td colspan="9">Belum ada rekap gaji.</td></tr>';
 }
+function todayLocal(){const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
 function renderTx(){
  const q=$('searchTx').value.trim().toLowerCase();
  const txs=state.transactions.filter(x=>[x.tanggal,x.referensi,x.jenis,x.keterangan,x.pihak,x.batchRef].some(v=>String(v||'').toLowerCase().includes(q)));
@@ -189,18 +190,32 @@ $('reload').onclick=refresh;
 $('backup').onclick=async()=>{try{const r=await call('backup');setStatus('Backup berhasil dibuat: '+r.name+' · '+r.url,true);}catch(e){setStatus('Backup gagal: '+e.message);}};
 document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{document.querySelectorAll('[data-tab]').forEach(x=>x.classList.toggle('active',x===b));['dash','tx','staff','attendance','payroll','calc'].forEach(id=>$(id).classList.toggle('hidden',id!==b.dataset.tab));});
 $('searchTx').oninput=renderTx;
-$('txform').elements.tanggal.value=new Date().toLocaleDateString('en-CA');
-$('txform').onsubmit=async e=>{e.preventDefault();const d=Object.fromEntries(new FormData(e.target));d.status=d.status||'draft';try{await call('saveTransaction',d);e.target.reset();e.target.elements.tanggal.value=new Date().toLocaleDateString('en-CA');e.target.elements.status.value='draft';await refresh();setStatus('Transaksi disimpan ke Sheets; pastikan status HPP dan rekonsiliasi.',true);}catch(err){setStatus('Transaksi gagal disimpan: '+err.message);}};
+$('txform').elements.tanggal.value=todayLocal();
+$('txform').onsubmit=async e=>{e.preventDefault();const d=Object.fromEntries(new FormData(e.target));d.status=d.status||'draft';try{await call('saveTransaction',d);e.target.reset();e.target.elements.tanggal.value=todayLocal();e.target.elements.status.value='draft';await refresh();setStatus('Transaksi disimpan ke Sheets; pastikan status HPP dan rekonsiliasi.',true);}catch(err){setStatus('Transaksi gagal disimpan: '+err.message);}};
 $('staffform').onsubmit=async e=>{e.preventDefault();const d=Object.fromEntries(new FormData(e.target));d.aktif=true;d.tarifHarian=Number(d.tarifHarian||0);d.tarifLemburPerJam=Number(d.tarifLemburPerJam||0);try{await call('saveEmployee',d);e.target.reset();await refresh();setStatus('Karyawan disimpan ke Sheets.',true);}catch(err){setStatus('Gagal menyimpan karyawan: '+err.message);}};
-$('attform').onsubmit=async e=>{e.preventDefault();const d=Object.fromEntries(new FormData(e.target));const emp=state.employees.find(x=>String(x.id)===d.karyawanId);if(!emp){setStatus('Pilih karyawan yang sudah terdaftar.');return;}d.namaKaryawan=emp.nama;try{await call('saveAttendance',d);e.target.reset();e.target.elements.tanggal.value=new Date().toLocaleDateString('en-CA');await refresh();setStatus('Absensi disimpan.',true);}catch(err){setStatus('Gagal menyimpan absensi: '+err.message);}};
-function payrollPreview(){
- const emp=state.employees.find(x=>String(x.id)===$('payEmployee').value);
- if(!emp){$('payPreview').textContent='Pilih karyawan dan masukkan hari hadir serta lembur untuk melihat estimasi.';return;}
- const days=num($('payform').elements.hariHadir.value), hours=num($('payform').elements.lemburJam.value), bonus=num($('payform').elements.bonus.value), cuts=num($('payform').elements.potongan.value);
- $('payPreview').textContent='Estimasi: '+money(days*num(emp.tarifHarian)+hours*num(emp.tarifLemburPerJam)+bonus-cuts)+' = '+days+' hari × '+money(emp.tarifHarian)+' + '+hours+' jam × '+money(emp.tarifLemburPerJam)+' + bonus '+money(bonus)+' − potongan '+money(cuts)+'. Verifikasi sebelum bayar.';
+$('attform').onsubmit=async e=>{e.preventDefault();const d=Object.fromEntries(new FormData(e.target));const emp=state.employees.find(x=>String(x.id)===d.karyawanId);if(!emp){setStatus('Pilih karyawan yang sudah terdaftar.');return;}d.namaKaryawan=emp.nama;try{await call('saveAttendance',d);e.target.reset();e.target.elements.tanggal.value=todayLocal();await refresh();setStatus('Absensi disimpan.',true);}catch(err){setStatus('Gagal menyimpan absensi: '+err.message);}};
+function fillPayrollAttendance(){
+ const employeeId=$('payEmployee').value;
+ const period=$('payform').elements.periode.value;
+ const byDate={};
+ state.attendance.filter(x=>String(x.karyawanId)===String(employeeId)&&String(x.tanggal||'').slice(0,7)===period).forEach(x=>{
+  const day=String(x.tanggal||'');
+  if(day && (!byDate[day] || String(x.updatedAt||'')>String(byDate[day].updatedAt||''))) byDate[day]=x;
+ });
+ const present=Object.values(byDate).filter(x=>String(x.status||'').toUpperCase()==='HADIR');
+ $('payform').elements.hariHadir.value=present.length;
+ $('payform').elements.lemburJam.value=present.reduce((sum,x)=>sum+Math.max(0,num(x.lemburJam)),0);
 }
-['payEmployee'].forEach(id=>$(id).onchange=payrollPreview);
-['hariHadir','lemburJam','bonus','potongan'].forEach(name=>$('payform').elements[name].oninput=payrollPreview);
+function payrollPreview(){
+ fillPayrollAttendance();
+ const emp=state.employees.find(x=>String(x.id)===$('payEmployee').value);
+ if(!emp){$('payPreview').textContent='Pilih karyawan dan periode. Jumlah hari hadir dan jam lembur akan diambil dari data absensi tersimpan.';return;}
+ const days=num($('payform').elements.hariHadir.value), hours=num($('payform').elements.lemburJam.value), bonus=num($('payform').elements.bonus.value), cuts=num($('payform').elements.potongan.value);
+ $('payPreview').textContent='Estimasi dari absensi tersimpan: '+money(days*num(emp.tarifHarian)+hours*num(emp.tarifLemburPerJam)+bonus-cuts)+' = '+days+' hari × '+money(emp.tarifHarian)+' + '+hours+' jam × '+money(emp.tarifLemburPerJam)+' + bonus '+money(bonus)+' − potongan '+money(cuts)+'. Server menghitung ulang sebelum menyimpan.';
+}
+$('payEmployee').onchange=payrollPreview;
+$('payform').elements.periode.onchange=payrollPreview;
+['bonus','potongan'].forEach(name=>$('payform').elements[name].oninput=payrollPreview);
 $('payform').onsubmit=async e=>{e.preventDefault();const d=Object.fromEntries(new FormData(e.target));const emp=state.employees.find(x=>String(x.id)===d.karyawanId);if(!emp){setStatus('Pilih karyawan yang terdaftar.');return;}d.namaKaryawan=emp.nama;d.tarifHarian=num(emp.tarifHarian);d.tarifLemburPerJam=num(emp.tarifLemburPerJam);d.hariHadir=num(d.hariHadir);d.lemburJam=num(d.lemburJam);d.bonus=num(d.bonus);d.potongan=num(d.potongan);d.gajiPokok=d.hariHadir*d.tarifHarian;d.uangLembur=d.lemburJam*d.tarifLemburPerJam;d.total=d.gajiPokok+d.uangLembur+d.bonus-d.potongan;if(d.total<0){setStatus('Total gaji tidak boleh negatif.');return;}try{await call('savePayroll',d);e.target.reset();await refresh();setStatus('Rekap gaji tersimpan. Verifikasi absensi dan ketentuan sebelum pembayaran.',true);}catch(err){setStatus('Gagal menyimpan gaji: '+err.message);}};
 </script>
 </body>
