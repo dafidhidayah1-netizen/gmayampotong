@@ -30,7 +30,7 @@ data class AyamTransaction(
 
     fun cashEffect(): Double {
         val amt = amount
-        val paid = paidAmount ?: amt
+        val paid = paidAmount ?: 0.0
         return when (type) {
             "capital_in" -> amt
             "sale" -> paid
