@@ -8,7 +8,7 @@
 const APP_NAME = 'AyamKas Pro';
 const API_KEY_PROPERTY = 'AYAMKAS_ANDROID_API_KEY';
 const TABLES = {
-  Transaksi: ['id','updatedAt','date','ref','type','category','description','amount','paidAmount','qtyKg','batchRef','notes','status','source','deleted','deletedAt','cashEffect'],
+  Transaksi: ['id','updatedAt','date','ref','type','category','description','amount','paidAmount','qtyKg','batchRef','notes','status','source','deleted','deletedAt','cashEffect','effectivePaid'],
   Ringkasan: ['Indikator','Nilai','Keterangan'],
   KartuDO: ['Ref DO','Tanggal DO','Kg Pembelian','Nilai DO (Rp)','HPP per Kg (Rp)','Kg Terjual','Sisa Kg','Nilai Stok (Rp)','Status Stok/HPP'],
   Validasi: ['Level','Kategori','ID Transaksi','Tanggal','Referensi','Peringatan'],
@@ -86,7 +86,7 @@ function ensureTables_() {
   tx.getRange('H:H').setNumberFormat('"Rp" #,##0');
   tx.getRange('I:I').setNumberFormat('"Rp" #,##0');
   tx.getRange('J:J').setNumberFormat('#,##0.###');
-  tx.getRange('Q:Q').setNumberFormat('"Rp" #,##0;[Red]-"Rp" #,##0');
+  tx.getRange('Q:R').setNumberFormat('"Rp" #,##0;[Red]-"Rp" #,##0');
 }
 
 function createAyamKasApiKey() {
@@ -246,11 +246,14 @@ function applyCashFormulas_() {
   const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Transaksi');
   const last = sh.getLastRow();
   if (last < 2) return;
-  const formulas = [];
+  const cashFormulas = [];
+  const paidFormulas = [];
   for (let r=2; r<=last; r++) {
-    formulas.push(['=IF(OR($M'+r+'<>"confirmed",$O'+r+'=TRUE),0,SWITCH($E'+r+',"capital_in",$H'+r+',"sale",IF($I'+r+'="", $H'+r+',$I'+r+'),"receivable_payment",$H'+r+',"purchase",-IF($I'+r+'="", $H'+r+',$I'+r+'),"expense",-IF($I'+r+'="", $H'+r+',$I'+r+'),"capital_out",-$H'+r+',"supplier_payment",-$H'+r+',0))']);
+    cashFormulas.push(['=IF(OR($M'+r+'<>"confirmed",$O'+r+'=TRUE),0,SWITCH($E'+r+',"capital_in",$H'+r+',"sale",IF($I'+r+'="", $H'+r+',$I'+r+'),"receivable_payment",$H'+r+',"purchase",-IF($I'+r+'="", $H'+r+',$I'+r+'),"expense",-IF($I'+r+'="", $H'+r+',$I'+r+'),"capital_out",-$H'+r+',"supplier_payment",-$H'+r+',0))']);
+    paidFormulas.push(['=IF(OR($M'+r+'<>"confirmed",$O'+r+'=TRUE),0,IF(OR($E'+r+'="sale",$E'+r+'="purchase",$E'+r+'="expense"),IF($I'+r+'="", $H'+r+',$I'+r+'),0))']);
   }
-  sh.getRange(2,17,formulas.length,1).setFormulas(formulas);
+  sh.getRange(2,17,cashFormulas.length,1).setFormulas(cashFormulas);
+  sh.getRange(2,18,paidFormulas.length,1).setFormulas(paidFormulas);
 }
 
 function refreshAyamKasReports() {
@@ -322,8 +325,8 @@ function refreshAyamKasReports() {
     ['Status laba','=IF(COUNTIF(Validasi!B2:B,"HPP")>0,"SEMENTARA — PERIKSA HPP","PERIKSA TUTUP BUKU")','Status otomatis untuk mencegah laba dianggap final saat HPP belum lengkap.'],
     ['Stok tercatat (kg)','=SUM(KartuDO!G2:G1000)','Kg pembelian terverifikasi dikurangi kg penjualan tertaut. Belum menghitung susut jika tidak dicatat terpisah.'],
     ['Nilai persediaan tersisa','=SUM(KartuDO!H2:H1000)','Stok sisa × HPP/kg per DO, pada basis berat yang sama.'],
-    ['Piutang agregat','=MAX(0,SUMIFS(Transaksi!H:H,Transaksi!E:E,"sale",Transaksi!M:M,"confirmed",Transaksi!O:O,FALSE)-SUMIFS(Transaksi!I:I,Transaksi!E:E,"sale",Transaksi!M:M,"confirmed",Transaksi!O:O,FALSE)-SUMIFS(Transaksi!H:H,Transaksi!E:E,"receivable_payment",Transaksi!M:M,"confirmed",Transaksi!O:O,FALSE))','Estimasi agregat. Belum rekonsiliasi per faktur karena pembayaran piutang belum wajib tertaut ke invoice.'],
-    ['Utang DO agregat','=MAX(0,SUMIFS(Transaksi!H:H,Transaksi!E:E,"purchase",Transaksi!M:M,"confirmed",Transaksi!O:O,FALSE)-SUMIFS(Transaksi!I:I,Transaksi!E:E,"purchase",Transaksi!M:M,"confirmed",Transaksi!O:O,FALSE)-SUMIFS(Transaksi!H:H,Transaksi!E:E,"supplier_payment",Transaksi!M:M,"confirmed",Transaksi!O:O,FALSE))','Estimasi agregat. Belum rekonsiliasi per faktur supplier/DO.'],
+    ['Piutang agregat','=MAX(0,SUMIFS(Transaksi!H:H,Transaksi!E:E,"sale",Transaksi!M:M,"confirmed",Transaksi!O:O,FALSE)-SUMIFS(Transaksi!R:R,Transaksi!E:E,"sale",Transaksi!M:M,"confirmed",Transaksi!O:O,FALSE)-SUMIFS(Transaksi!H:H,Transaksi!E:E,"receivable_payment",Transaksi!M:M,"confirmed",Transaksi!O:O,FALSE))','Estimasi agregat. Belum rekonsiliasi per faktur karena pembayaran piutang belum wajib tertaut ke invoice.'],
+    ['Utang DO agregat','=MAX(0,SUMIFS(Transaksi!H:H,Transaksi!E:E,"purchase",Transaksi!M:M,"confirmed",Transaksi!O:O,FALSE)-SUMIFS(Transaksi!R:R,Transaksi!E:E,"purchase",Transaksi!M:M,"confirmed",Transaksi!O:O,FALSE)-SUMIFS(Transaksi!H:H,Transaksi!E:E,"supplier_payment",Transaksi!M:M,"confirmed",Transaksi!O:O,FALSE))','Estimasi agregat. Belum rekonsiliasi per faktur supplier/DO.'],
     ['Jumlah transaksi draf','=COUNTIFS(Transaksi!M:M,"draft",Transaksi!O:O,FALSE)','Selesaikan verifikasi sebelum tutup periode.'],
     ['Jumlah peringatan','=COUNTA(Validasi!A2:A)','Buka lembar Validasi untuk melihat hal yang perlu dibenahi.']
   ];
