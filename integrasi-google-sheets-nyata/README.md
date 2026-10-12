@@ -12,7 +12,7 @@
 4. Simpan semua file. Pilih fungsi `configureApiToken` dan jalankan satu kali. Berikan izin yang diminta. Buka **Execution log** milik pemilik script, lalu salin nilai `AYAMKAS_API_TOKEN`. Jangan kirim token melalui chat atau menyimpannya di spreadsheet.
 5. Pilih fungsi `setup_` dan jalankan satu kali. Fungsi ini hanya membuat tab yang belum ada dan menambahkan header yang kurang; ia tidak mereset transaksi.
 6. Deploy → New deployment → **Web app**. Pilih *Execute as: Me*. Atur akses mengikuti kebutuhan dan kebijakan akun Google. Akses untuk pemanggilan langsung Android dapat memerlukan deployment yang dapat diakses publik; token membatasi operasi API tetapi tidak sama dengan autentikasi multi-pengguna.
-7. Buka URL deployment berakhiran `/exec`, masukkan token pada panel, lalu tekan **Uji koneksi & muat data**. Uji satu transaksi baru, cocokkan tab `Transaksi` dan formula `Ringkasan`, lalu gunakan backup dan buka file hasil salinan untuk memeriksa bahwa datanya benar-benar ada.
+7. Buka URL deployment berakhiran `/exec`, masukkan token pada panel, lalu tekan **Uji koneksi & muat data**. Uji satu transaksi baru, cocokkan tab `AKP_Transaksi` dan formula `AKP_Ringkasan`, lalu gunakan backup dan buka file hasil salinan untuk memeriksa bahwa datanya benar-benar ada.
 8. Jika kode diubah sesudah deploy, perbarui deployment ke versi baru. Menyimpan source saja tidak otomatis memperbarui deployment aktif.
 9. Untuk Google Sites: Insert → Embed → URL → masukkan URL `/exec`. Uji dari akun/browser lain dan jangan menaruh penggajian di halaman publik.
 
@@ -26,7 +26,7 @@
 - GitHub tidak dapat otomatis menghubungkan atau men-deploy ke akun Google Anda. Pemasangan dan izin di akun pemilik tetap diperlukan.
 - HPP/stok dihitung dari formula batch. Validasi pada data uji yang diketahui benar sebelum dipakai secara operasional.
 - Piutang dan utang yang ditampilkan masih berupa estimasi agregat. Umur saldo, jatuh tempo, dan saldo per pelanggan/supplier memerlukan modul invoice serta pembayaran yang tertaut ke invoice/DO.
-- Payroll adalah kalkulasi dasar; tidak otomatis menetapkan kewajiban lembur, BPJS, PPh 21 atau semua ketentuan ketenagakerjaan.
+- Payroll memakai absensi tercatat untuk hari hadir dan jam lembur, lalu membuat pengeluaran gaji tertaut ke buku transaksi saat disetujui. Sistem tidak otomatis menetapkan kewajiban BPJS, PPh 21 atau semua ketentuan ketenagakerjaan.
 - Backup menyalin spreadsheet, bukan data lokal Android.
 - Jangan menganggap status koneksi saja sebagai bukti berhasil. Verifikasi respons API, ID transaksi, waktu sync, nilai sheet dan rekonsiliasi kas fisik.
 
