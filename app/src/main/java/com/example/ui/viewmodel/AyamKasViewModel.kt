@@ -48,6 +48,12 @@ class AyamKasViewModel(application: Application) : AndroidViewModel(application)
     private val repository: AyamKasRepository
     val allTransactions: StateFlow<List<AyamTransaction>>
     val allDeleted: StateFlow<List<DeletedAyamTransaction>>
+    val cashTransactions = repository.cashTransactions
+    val cashFlows = repository.cashFlows
+    val externalLoans = repository.externalLoans
+    val employees = repository.employees
+    val attendance = repository.attendance
+    val payroll = repository.payroll
 
     val searchQuery = MutableStateFlow("")
     val typeFilter = MutableStateFlow("all")
@@ -60,13 +66,14 @@ class AyamKasViewModel(application: Application) : AndroidViewModel(application)
     val isFormOpen = MutableStateFlow(false)
     val editingTransaction = MutableStateFlow<AyamTransaction?>(null)
     val presetType = MutableStateFlow<String?>(null)
+    val isPurchaseDoScreenOpen = MutableStateFlow(false)
 
     private val _userMessage = MutableSharedFlow<String>()
     val userMessage = _userMessage.asSharedFlow()
 
     init {
         val db = KasDatabase.getDatabase(application)
-        repository = AyamKasRepository(db.ayamKasDao())
+        repository = AyamKasRepository(db.ayamKasDao(), db.businessLedgerDao())
 
         allTransactions = repository.allTransactions.stateIn(
             viewModelScope,
@@ -280,9 +287,90 @@ class AyamKasViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun openForm(tx: AyamTransaction? = null, kind: String? = null) {
+        if (tx == null && kind == "purchase") {
+            openPurchaseDoScreen()
+            return
+        }
         editingTransaction.value = tx
         presetType.value = kind
         isFormOpen.value = true
+    }
+
+    fun openPurchaseDoScreen() {
+        isFormOpen.value = false
+        editingTransaction.value = null
+        presetType.value = null
+        isPurchaseDoScreenOpen.value = true
+    }
+
+    fun closePurchaseDoScreen() {
+        isPurchaseDoScreenOpen.value = false
+    }
+
+    fun savePurchaseDo(
+        date: String,
+        doNumber: String,
+        quantityKg: Double,
+        supplier: String,
+        totalPrice: Double,
+        paidNow: Double,
+        paymentMethod: String,
+        cashAccount: String,
+        weightLossKg: Double,
+        mortalityRatePct: Double,
+        fcr: Double?,
+        weightGainKg: Double?,
+        feedPricePerKg: Double?,
+        processingCost: Double,
+        notes: String,
+        confirmed: Boolean
+    ) {
+        val invalid = when {
+            date.isBlank() -> "Tanggal pembelian wajib diisi"
+            doNumber.isBlank() -> "Nomor DO wajib diisi"
+            supplier.isBlank() -> "Nama supplier wajib diisi"
+            quantityKg <= 0.0 -> "Berat pembelian harus lebih dari nol"
+            totalPrice <= 0.0 -> "Harga total DO harus lebih dari nol"
+            paidNow < 0.0 || paidNow > totalPrice -> "Pembayaran harus antara Rp0 dan total DO"
+            weightLossKg < 0.0 -> "Penyusutan tidak boleh negatif"
+            mortalityRatePct !in 0.0..100.0 -> "Persentase kematian harus 0–100%"
+            processingCost < 0.0 -> "Biaya pemotongan tidak boleh negatif"
+            fcr != null && fcr < 0.0 -> "FCR tidak boleh negatif"
+            weightGainKg != null && weightGainKg < 0.0 -> "Pertambahan berat tidak boleh negatif"
+            feedPricePerKg != null && feedPricePerKg < 0.0 -> "Harga pakan tidak boleh negatif"
+            (fcr == null) != (weightGainKg == null) || (fcr == null) != (feedPricePerKg == null) ->
+                "Isi FCR, pertambahan berat, dan harga pakan bersamaan atau kosongkan semuanya"
+            weightLossKg > quantityKg -> "Penyusutan tidak boleh melebihi kg pembelian"
+            else -> null
+        }
+        if (invalid != null) {
+            viewModelScope.launch { _userMessage.emit(invalid) }
+            return
+        }
+        saveTransaction(
+            id = null,
+            date = date,
+            ref = doNumber,
+            type = "purchase",
+            category = "Ayam / DO",
+            description = "Pembelian DO $doNumber · $supplier",
+            amount = totalPrice,
+            paidAmount = paidNow,
+            qtyKg = quantityKg,
+            batchRef = "",
+            notes = notes,
+            isConfirmed = confirmed,
+            paymentMethod = paymentMethod,
+            cashAccount = cashAccount,
+            supplier = supplier,
+            weightLossKg = weightLossKg,
+            mortalityRatePct = mortalityRatePct,
+            fcr = fcr,
+            weightGainKg = weightGainKg,
+            feedPricePerKg = feedPricePerKg,
+            processingCost = processingCost
+        )
+        isPurchaseDoScreenOpen.value = false
     }
 
     fun closeForm() {
@@ -303,7 +391,16 @@ class AyamKasViewModel(application: Application) : AndroidViewModel(application)
         qtyKg: Double?,
         batchRef: String,
         notes: String,
-        isConfirmed: Boolean
+        isConfirmed: Boolean,
+        paymentMethod: String = "CASH",
+        cashAccount: String = "DOMPET",
+        supplier: String = "",
+        weightLossKg: Double? = null,
+        mortalityRatePct: Double? = null,
+        fcr: Double? = null,
+        weightGainKg: Double? = null,
+        feedPricePerKg: Double? = null,
+        processingCost: Double = 0.0
     ) {
         viewModelScope.launch {
             val txId = id?.ifBlank { null } ?: "TX-${System.currentTimeMillis()}"
@@ -321,7 +418,16 @@ class AyamKasViewModel(application: Application) : AndroidViewModel(application)
                 batchRef = batchRef.trim(),
                 notes = notes.trim(),
                 status = if (isConfirmed) "confirmed" else "draft",
-                source = existing?.source ?: "manual"
+                source = existing?.source ?: "manual",
+                paymentMethod = paymentMethod,
+                cashAccount = cashAccount,
+                supplier = supplier.trim(),
+                weightLossKg = weightLossKg,
+                mortalityRatePct = mortalityRatePct,
+                fcr = fcr,
+                weightGainKg = weightGainKg,
+                feedPricePerKg = feedPricePerKg,
+                processingCost = processingCost
             )
             repository.saveTransaction(tx)
             scheduleAutoSync()
@@ -391,6 +497,46 @@ class AyamKasViewModel(application: Application) : AndroidViewModel(application)
             repository.restoreDefaultData()
             scheduleAutoSync()
             _userMessage.emit("Data operasional riil berhasil dimuat ulang")
+        }
+    }
+
+    fun saveCashFlow(flow: com.example.data.model.CashFlow) {
+        viewModelScope.launch {
+            runCatching { repository.saveCashFlow(flow) }
+                .onSuccess { _userMessage.emit("Transfer antar rekening tersimpan") }
+                .onFailure { _userMessage.emit(it.message ?: "Transfer gagal disimpan") }
+        }
+    }
+
+    fun saveExternalLoan(loan: com.example.data.model.ExternalLoan) {
+        viewModelScope.launch {
+            runCatching { repository.saveExternalLoan(loan) }
+                .onSuccess { _userMessage.emit("Catatan pinjaman tersimpan terpisah dari laba usaha") }
+                .onFailure { _userMessage.emit(it.message ?: "Pinjaman gagal disimpan") }
+        }
+    }
+
+    fun saveEmployee(employee: com.example.data.model.EmployeeRecord) {
+        viewModelScope.launch {
+            runCatching { repository.saveEmployee(employee) }
+                .onSuccess { _userMessage.emit("Data karyawan tersimpan") }
+                .onFailure { _userMessage.emit(it.message ?: "Karyawan gagal disimpan") }
+        }
+    }
+
+    fun saveAttendance(record: com.example.data.model.AttendanceRecord) {
+        viewModelScope.launch {
+            runCatching { repository.saveAttendance(record) }
+                .onSuccess { _userMessage.emit("Absensi tersimpan") }
+                .onFailure { _userMessage.emit(it.message ?: "Absensi gagal disimpan") }
+        }
+    }
+
+    fun savePayroll(record: com.example.data.model.PayrollRecord) {
+        viewModelScope.launch {
+            runCatching { repository.savePayroll(record) }
+                .onSuccess { _userMessage.emit("Rekap payroll tersimpan") }
+                .onFailure { _userMessage.emit(it.message ?: "Payroll gagal disimpan") }
         }
     }
 
