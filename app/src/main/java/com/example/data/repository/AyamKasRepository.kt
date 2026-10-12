@@ -11,6 +11,7 @@ import com.example.data.model.AttendanceRecord
 import com.example.data.model.PayrollRecord
 import com.example.data.model.AyamTransactionType
 import com.example.data.model.AyamKasFormatters
+import com.example.data.model.BusinessLedgerCalculator
 import com.example.data.model.DeletedAyamTransaction
 import com.example.data.model.InitialAyamData
 import kotlinx.coroutines.flow.Flow
@@ -109,25 +110,16 @@ class AyamKasRepository(
         val allLoans = businessDao.observeExternalLoans().first()
         if (loan.direction == "REPAYMENT" || loan.direction == "COLLECTION") {
             require(loanRef.isNotBlank()) { "Pelunasan wajib memakai referensi pinjaman asal" }
-            val sourceDirection = if (loan.direction == "REPAYMENT") "RECEIVED" else "GIVEN"
             val allowedType = if (loan.direction == "REPAYMENT") debtTypes else lendingTypes
             require(loan.loanType in allowedType) {
                 if (loan.direction == "REPAYMENT") "Pelunasan harus memilih kategori pinjaman yang diterima usaha" else "Penagihan harus memilih kategori pinjaman yang diberikan usaha"
             }
-            val principal = allLoans.filter {
-                it.loanReference.trim().equals(loanRef, ignoreCase = true) &&
-                    it.loanType == loan.loanType && it.direction == sourceDirection &&
-                    it.status == "confirmed" && it.id != loan.id
-            }.sumOf { it.amount }
-            require(principal > 0.0) { "Referensi pinjaman asal tidak ditemukan atau belum terverifikasi" }
-            val previousSettlement = allLoans.filter {
-                it.loanReference.trim().equals(loanRef, ignoreCase = true) &&
-                    it.loanType == loan.loanType && it.direction == loan.direction &&
-                    it.status == "confirmed" && it.id != loan.id
-            }.sumOf { it.amount }
-            val outstanding = (principal - previousSettlement).coerceAtLeast(0.0)
-            require(loan.amount <= outstanding + 0.0001) {
-                "Nominal pelunasan/penagihan melebihi saldo referensi pinjaman (${AyamKasFormatters.formatRupiah(outstanding)})"
+            val balance = BusinessLedgerCalculator.loanBalance(
+                allLoans.filterNot { it.id == loan.id }, loanRef, loan.loanType
+            )
+            require(balance.principal > 0.0) { "Referensi pinjaman asal tidak ditemukan atau belum terverifikasi" }
+            require(loan.amount <= balance.outstanding + 0.0001) {
+                "Nominal pelunasan/penagihan melebihi saldo referensi pinjaman (${AyamKasFormatters.formatRupiah(balance.outstanding)})"
             }
         }
         val saved = loan.copy(loanReference = loanRef, updatedAt = nowIso())
@@ -178,14 +170,8 @@ class AyamKasRepository(
         businessDao.saveAttendance(record.copy(overtimeHours = overtime, updatedAt = nowIso()))
     }
 
-    private fun calculateWorkedHours(clockIn: String, clockOut: String, breakMinutes: Int): Double {
-        val start = java.time.LocalTime.parse(clockIn)
-        val end = java.time.LocalTime.parse(clockOut)
-        var minutes = java.time.Duration.between(start, end).toMinutes()
-        if (minutes < 0) minutes += 24 * 60 // overnight shift
-        minutes = (minutes - breakMinutes).coerceAtLeast(0)
-        return minutes / 60.0
-    }
+    private fun calculateWorkedHours(clockIn: String, clockOut: String, breakMinutes: Int): Double =
+        BusinessLedgerCalculator.workedHours(clockIn, clockOut, breakMinutes)
 
     suspend fun savePayroll(record: PayrollRecord) {
         require(record.daysPresent >= 0.0 && record.overtimeHours >= 0.0) { "Hari hadir/jam lembur tidak boleh negatif" }
