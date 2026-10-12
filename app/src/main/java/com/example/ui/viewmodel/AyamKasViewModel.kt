@@ -602,12 +602,6 @@ class AyamKasViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    fun restoreDefaultData() {
-        viewModelScope.launch {
-            repository.restoreDefaultData()
-            scheduleAutoSync()
-            _userMessage.emit("Data operasional riil berhasil dimuat ulang")
-        }
     }
 
     fun saveCashFlow(flow: com.example.data.model.CashFlow) {
