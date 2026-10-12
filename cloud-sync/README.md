@@ -64,7 +64,7 @@ The endpoint's \`doGet\` response is a JSON health check. \`doPost\` accepts \`p
 
 ## Editing the ledger directly in Google Sheets
 
-Editing cells in the managed \`Transaksi\` sheet is also supported. The bound Apps Script stamps the row with a new \`updatedAt\` and source \`sheets\`; changing business data marks the row as \`draft\` and refreshes formulas/validation. Review the row and explicitly set its status back to \`confirmed\` after checking it. The next Android sync pulls the newer version. Do not edit generated report formulas by hand; use the \`AyamKas Pro → Hitung Ulang Ringkasan & Validasi\` menu if needed.
+Editing cells in the managed \`Transaksi\` sheet is also supported. The bound Apps Script stamps the row with a new \`updatedAt\` and source \`sheets\`; changing business data marks the row as \`draft\` and refreshes formulas/validation. To add a row directly in Sheets, fill the date, transaction type, and positive amount; a stable ID is generated once those required fields exist. The row starts as a draft. Review it and explicitly set its status back to \`confirmed\` after checking it. The next Android sync pulls the newer version. Do not edit generated report formulas by hand; use the \`AyamKas Pro → Hitung Ulang Ringkasan & Validasi\` menu if needed.
 
 ## Important scope boundary
 
