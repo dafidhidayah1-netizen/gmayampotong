@@ -1,6 +1,17 @@
 package com.example.data.model
 
 object AyamKasCalculator {
+    private data class DoBatchCost(
+        val reference: String,
+        val label: String,
+        val purchaseKg: Double,
+        val purchaseCost: Double,
+        val soldKg: Double
+    ) {
+        val remainingKg: Double get() = purchaseKg - soldKg
+        val costPerKg: Double get() = if (purchaseKg > 0) purchaseCost / purchaseKg else 0.0
+    }
+
 
     fun calculate(
         allTransactions: List<AyamTransaction>,
@@ -21,10 +32,28 @@ object AyamKasCalculator {
         val expensesTx = confirmedList.filter { it.type == "expense" }
         val expenses = expensesTx.sumOf { it.amount }
 
-        // Sales for this period may draw stock from DOs purchased in a previous period.
-        val knownPurchases = allPurchases
-            .filter { it.ref.isNotBlank() }
-            .associateBy { it.ref.trim().lowercase() }
+        // Build a weighted cost per DO across all confirmed purchases, including DOs
+        // acquired in earlier months. Reused DO references are grouped to avoid charging
+        // the same batch's sales against each purchase row more than once.
+        val purchaseGroups = allPurchases.groupBy { p ->
+            p.ref.trim().lowercase().ifBlank { "#${p.id.lowercase()}" }
+        }
+        val batchCosts = purchaseGroups.mapValues { (_, batchPurchases) ->
+            val batchRef = batchPurchases.firstOrNull { it.ref.isNotBlank() }?.ref?.trim().orEmpty()
+            val purchaseKg = batchPurchases.sumOf { (it.qtyKg ?: 0.0).coerceAtLeast(0.0) }
+            val purchaseCost = batchPurchases.sumOf { it.amount.coerceAtLeast(0.0) }
+            val soldKg = if (batchRef.isBlank()) 0.0 else allSales
+                .filter { it.batchRef.trim().equals(batchRef, ignoreCase = true) }
+                .sumOf { (it.qtyKg ?: 0.0).coerceAtLeast(0.0) }
+            DoBatchCost(
+                reference = batchRef,
+                label = batchPurchases.firstOrNull()?.ref?.takeIf { it.isNotBlank() }
+                    ?: "Tanpa ref (${batchPurchases.firstOrNull()?.id.orEmpty()})",
+                purchaseKg = purchaseKg,
+                purchaseCost = purchaseCost,
+                soldKg = soldKg
+            )
+        }
 
         var cogs = 0.0
         var knownSales = 0
@@ -33,29 +62,23 @@ object AyamKasCalculator {
         var stockValue = 0.0
         val negativeStockBatches = mutableListOf<String>()
 
-        for (p in allPurchases) {
-            val pRefKey = p.ref.trim().lowercase()
-            val sold = allSales
-                .filter { it.batchRef.trim().lowercase() == pRefKey }
-                .sumOf { (it.qtyKg ?: 0.0).coerceAtLeast(0.0) }
-            val kg = p.qtyKg ?: 0.0
-            val cost = p.amount
-            val remaining = kg - sold
+        batchCosts.values.forEach { batch ->
+            val remaining = batch.remainingKg
             stockKg += remaining
-            val unitCost = if (kg > 0) cost / kg else 0.0
-            stockValue += remaining.coerceAtLeast(0.0) * unitCost
+            stockValue += remaining.coerceAtLeast(0.0) * batch.costPerKg
             if (remaining < -0.0001) {
-                negativeStockBatches.add(p.ref.ifBlank { "Tanpa ref" })
+                negativeStockBatches.add(batch.reference.ifBlank { batch.label })
             }
         }
 
         for (s in revenueTx) {
             val br = s.batchRef.trim().lowercase()
-            val p = knownPurchases[br]
+            val batch = batchCosts[br]
             val saleQty = s.qtyKg ?: 0.0
-            if (saleQty > 0 && p != null && (p.qtyKg ?: 0.0) > 0) {
-                val unitCost = p.amount / (p.qtyKg ?: 1.0)
-                cogs += unitCost * saleQty
+            if (saleQty > 0 && br.isNotBlank() && batch != null &&
+                batch.purchaseKg > 0 && batch.purchaseCost > 0
+            ) {
+                cogs += batch.costPerKg * saleQty
                 knownSales++
             } else {
                 unknownSales++
@@ -81,7 +104,7 @@ object AyamKasCalculator {
 
         val profitBeforeCogs = revenue - expenses
         val profit = profitBeforeCogs - cogs
-        val profitComplete = (unknownSales == 0)
+        val profitComplete = (unknownSales == 0 && negativeStockBatches.isEmpty())
 
         val confirmedCount = confirmedList.size
         val draftCount = allTransactions.count { it.isDraft }
@@ -132,28 +155,37 @@ object AyamKasCalculator {
         val purchases = confirmed.filter { it.type == "purchase" }
         val sales = confirmed.filter { it.type == "sale" }
 
-        return purchases.map { p ->
-            val pRefKey = p.ref.trim().lowercase()
-            val linkedSales = sales.filter { it.batchRef.trim().lowercase() == pRefKey }
+        val purchaseGroups = purchases.groupBy { p ->
+            p.ref.trim().lowercase().ifBlank { "#${p.id.lowercase()}" }
+        }
+
+        return purchaseGroups.values.map { batchPurchases ->
+            val first = batchPurchases.first()
+            val ref = batchPurchases.firstOrNull { it.ref.isNotBlank() }?.ref?.trim().orEmpty()
+            val purchasedKg = batchPurchases.sumOf { (it.qtyKg ?: 0.0).coerceAtLeast(0.0) }
+            val totalCost = batchPurchases.sumOf { it.amount.coerceAtLeast(0.0) }
+            val linkedSales = if (ref.isBlank()) emptyList() else sales.filter {
+                it.batchRef.trim().equals(ref, ignoreCase = true)
+            }
             val soldKg = linkedSales.sumOf { (it.qtyKg ?: 0.0).coerceAtLeast(0.0) }
             val missingSalesCount = linkedSales.count { it.qtyKg == null || it.qtyKg <= 0.0 }
-            val totalPurchasedKg = p.qtyKg ?: 0.0
-            val remainingKg = totalPurchasedKg - soldKg
-            val totalCost = p.amount
-            val unitCost = if (totalPurchasedKg > 0) totalCost / totalPurchasedKg else 0.0
-            val remainingValue = (remainingKg * unitCost).coerceAtLeast(0.0)
+            val remainingKg = purchasedKg - soldKg
+            val unitCost = if (purchasedKg > 0) totalCost / purchasedKg else 0.0
+            val remainingValue = remainingKg.coerceAtLeast(0.0) * unitCost
 
             val status = when {
+                purchasedKg <= 0 || totalCost <= 0 -> "HPP Belum Lengkap"
                 remainingKg < -0.0001 -> "Stok Negatif"
                 missingSalesCount > 0 -> "HPP Belum Lengkap"
                 else -> "Terhitung"
             }
 
             DoStockItem(
-                purchaseTx = p,
+                // Aggregate rows sharing one DO reference and calculate a weighted unit cost.
+                purchaseTx = first.copy(ref = ref, qtyKg = purchasedKg, amount = totalCost),
                 soldKg = soldKg,
                 missingSalesCount = missingSalesCount,
-                totalPurchasedKg = totalPurchasedKg,
+                totalPurchasedKg = purchasedKg,
                 remainingKg = remainingKg,
                 totalCost = totalCost,
                 unitCost = unitCost,
