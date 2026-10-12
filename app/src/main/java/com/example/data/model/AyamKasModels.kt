@@ -172,7 +172,7 @@ object InitialAyamData {
             paidAmount = 10954000.0,
             qtyKg = null,
             batchRef = "",
-            status = "confirmed",
+            status = "draft",
             source = "real",
             notes = "Modal pembukaan kas operasional GM Ayam Potong"
         ),
@@ -187,7 +187,7 @@ object InitialAyamData {
             paidAmount = 658000.0,
             qtyKg = 22.0,
             batchRef = "B-027",
-            status = "confirmed",
+            status = "draft",
             source = "real",
             notes = "Penjualan tunai pelanggan lapak"
         ),
@@ -202,7 +202,7 @@ object InitialAyamData {
             paidAmount = 1731000.0,
             qtyKg = 74.95,
             batchRef = "",
-            status = "confirmed",
+            status = "draft",
             source = "real",
             notes = "DO supplier B-028 lunas transfer"
         ),
@@ -217,7 +217,7 @@ object InitialAyamData {
             paidAmount = 1404000.0,
             qtyKg = 52.0,
             batchRef = "B-028",
-            status = "confirmed",
+            status = "draft",
             source = "real",
             notes = "Penjualan karkas dan potong"
         ),
@@ -232,7 +232,7 @@ object InitialAyamData {
             paidAmount = 61500.0,
             qtyKg = null,
             batchRef = "",
-            status = "confirmed",
+            status = "draft",
             source = "real",
             notes = "Biaya harian Rp55.000 + biaya admin transfer Rp6.500"
         ),
@@ -247,7 +247,7 @@ object InitialAyamData {
             paidAmount = 1495000.0,
             qtyKg = 25.63,
             batchRef = "",
-            status = "confirmed",
+            status = "draft",
             source = "real",
             notes = "DO supplier B-029 lunas"
         ),
@@ -262,7 +262,7 @@ object InitialAyamData {
             paidAmount = 870000.0,
             qtyKg = 25.63,
             batchRef = "B-029",
-            status = "confirmed",
+            status = "draft",
             source = "real",
             notes = "Penjualan ayam lunas"
         ),
@@ -277,7 +277,7 @@ object InitialAyamData {
             paidAmount = 65000.0,
             qtyKg = null,
             batchRef = "",
-            status = "confirmed",
+            status = "draft",
             source = "real",
             notes = "Biaya es balok dan bensin"
         ),
@@ -292,7 +292,7 @@ object InitialAyamData {
             paidAmount = 1385000.0,
             qtyKg = 58.44,
             batchRef = "",
-            status = "confirmed",
+            status = "draft",
             source = "real",
             notes = "DO supplier C-001 lunas"
         ),
@@ -307,7 +307,7 @@ object InitialAyamData {
             paidAmount = 2400000.0,
             qtyKg = 58.44,
             batchRef = "C-001",
-            status = "confirmed",
+            status = "draft",
             source = "real",
             notes = "Penjualan ayam pasar lunas"
         ),
@@ -322,7 +322,7 @@ object InitialAyamData {
             paidAmount = 78000.0,
             qtyKg = null,
             batchRef = "",
-            status = "confirmed",
+            status = "draft",
             source = "real",
             notes = "Biaya harian Rp70.000 + biaya admin Rp8.000"
         ),
@@ -337,7 +337,7 @@ object InitialAyamData {
             paidAmount = 4897870.0,
             qtyKg = 200.0,
             batchRef = "",
-            status = "confirmed",
+            status = "draft",
             source = "real",
             notes = "DO supplier C-002 lunas transfer"
         ),
@@ -352,7 +352,7 @@ object InitialAyamData {
             paidAmount = 1856500.0,
             qtyKg = 75.0,
             batchRef = "C-002",
-            status = "confirmed",
+            status = "draft",
             source = "real",
             notes = "Penjualan pagi lunas"
         ),
@@ -367,7 +367,7 @@ object InitialAyamData {
             paidAmount = 151000.0,
             qtyKg = null,
             batchRef = "",
-            status = "confirmed",
+            status = "draft",
             source = "real",
             notes = "Biaya operasional Rp143.000 + admin Rp8.000"
         ),
@@ -382,7 +382,7 @@ object InitialAyamData {
             paidAmount = 3665500.0,
             qtyKg = 125.0,
             batchRef = "C-002",
-            status = "confirmed",
+            status = "draft",
             source = "real",
             notes = "Penjualan sore lunas"
         ),
@@ -397,7 +397,7 @@ object InitialAyamData {
             paidAmount = 163000.0,
             qtyKg = null,
             batchRef = "",
-            status = "confirmed",
+            status = "draft",
             source = "real",
             notes = "Biaya potong dan plastik"
         ),
@@ -412,7 +412,7 @@ object InitialAyamData {
             paidAmount = 4558500.0,
             qtyKg = 200.0,
             batchRef = "",
-            status = "confirmed",
+            status = "draft",
             source = "real",
             notes = "DO supplier D001 lunas"
         ),
@@ -427,7 +427,7 @@ object InitialAyamData {
             paidAmount = 3533000.0,
             qtyKg = 145.0,
             batchRef = "D001",
-            status = "confirmed",
+            status = "draft",
             source = "real",
             notes = "Penjualan pelanggan langganan lunas"
         ),
@@ -442,7 +442,7 @@ object InitialAyamData {
             paidAmount = 78000.0,
             qtyKg = null,
             batchRef = "",
-            status = "confirmed",
+            status = "draft",
             source = "real",
             notes = "Biaya harian dan transport"
         ),
@@ -457,7 +457,7 @@ object InitialAyamData {
             paidAmount = 1275000.0,
             qtyKg = 56.17,
             batchRef = "",
-            status = "confirmed",
+            status = "draft",
             source = "real",
             notes = "DO supplier E-001 lunas"
         ),
@@ -472,7 +472,7 @@ object InitialAyamData {
             paidAmount = 3355000.0,
             qtyKg = 56.17,
             batchRef = "E-001",
-            status = "confirmed",
+            status = "draft",
             source = "real",
             notes = "Penjualan ayam lunas"
         ),
@@ -487,7 +487,7 @@ object InitialAyamData {
             paidAmount = 117000.0,
             qtyKg = null,
             batchRef = "",
-            status = "confirmed",
+            status = "draft",
             source = "real",
             notes = "Biaya operasional harian"
         ),
@@ -502,7 +502,7 @@ object InitialAyamData {
             paidAmount = 3000000.0,
             qtyKg = 241.62,
             batchRef = "",
-            status = "confirmed",
+            status = "draft",
             source = "real",
             notes = "Dibayar DP tunai Rp3.000.000, sisa utang DO Rp2.484.000"
         ),
@@ -517,7 +517,7 @@ object InitialAyamData {
             paidAmount = 2758000.0,
             qtyKg = 81.22,
             batchRef = "F-001",
-            status = "confirmed",
+            status = "draft",
             source = "real",
             notes = "Penjualan tunai pelanggan"
         ),
@@ -532,7 +532,7 @@ object InitialAyamData {
             paidAmount = 150000.0,
             qtyKg = null,
             batchRef = "",
-            status = "confirmed",
+            status = "draft",
             source = "real",
             notes = "Kondangan Rp50.000 + operasional Rp100.000"
         ),
@@ -547,7 +547,7 @@ object InitialAyamData {
             paidAmount = 3557500.0,
             qtyKg = 156.72,
             batchRef = "",
-            status = "confirmed",
+            status = "draft",
             source = "real",
             notes = "DO supplier G-001 lunas"
         ),
@@ -562,7 +562,7 @@ object InitialAyamData {
             paidAmount = 3870000.0,
             qtyKg = 156.72,
             batchRef = "G-001",
-            status = "confirmed",
+            status = "draft",
             source = "real",
             notes = "Penjualan ayam lunas"
         ),
@@ -577,7 +577,7 @@ object InitialAyamData {
             paidAmount = 187000.0,
             qtyKg = null,
             batchRef = "",
-            status = "confirmed",
+            status = "draft",
             source = "real",
             notes = "Biaya harian bensin dan tenaga potong"
         ),
@@ -592,7 +592,7 @@ object InitialAyamData {
             paidAmount = 2734000.0,
             qtyKg = 105.0,
             batchRef = "F-001",
-            status = "confirmed",
+            status = "draft",
             source = "real",
             notes = "Penjualan lunas langganan warung"
         ),
@@ -607,7 +607,7 @@ object InitialAyamData {
             paidAmount = 110000.0,
             qtyKg = null,
             batchRef = "",
-            status = "confirmed",
+            status = "draft",
             source = "real",
             notes = "Biaya es balok dan kebersihan"
         ),
@@ -622,7 +622,7 @@ object InitialAyamData {
             paidAmount = 3728500.0,
             qtyKg = 150.96,
             batchRef = "",
-            status = "confirmed",
+            status = "draft",
             source = "real",
             notes = "DO supplier I-001 lunas transfer"
         ),
@@ -637,7 +637,7 @@ object InitialAyamData {
             paidAmount = 1685000.0,
             qtyKg = 68.0,
             batchRef = "I-001",
-            status = "confirmed",
+            status = "draft",
             source = "real",
             notes = "Penjualan ayam potong lunas"
         ),
@@ -652,7 +652,7 @@ object InitialAyamData {
             paidAmount = 512000.0,
             qtyKg = null,
             batchRef = "",
-            status = "confirmed",
+            status = "draft",
             source = "real",
             notes = "Biaya pakan ayam hidup Rp512.000"
         )
