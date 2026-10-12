@@ -77,6 +77,8 @@ abstract class KasDatabase : RoomDatabase() {
 
                 db.execSQL("""CREATE TABLE IF NOT EXISTS employees (
                     id TEXT NOT NULL, name TEXT NOT NULL, position TEXT NOT NULL, dailyRate REAL NOT NULL,
+                    standardHoursPerShift REAL NOT NULL DEFAULT 8.0,
+                    overtimeRatePerHour REAL NOT NULL DEFAULT 0.0,
                     active INTEGER NOT NULL, updatedAt TEXT NOT NULL, PRIMARY KEY(id))""")
 
                 db.execSQL("""CREATE TABLE IF NOT EXISTS attendance_records (
