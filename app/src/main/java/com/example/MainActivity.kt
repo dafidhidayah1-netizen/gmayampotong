@@ -165,6 +165,7 @@ fun AyamKasApp(viewModel: AyamKasViewModel) {
 
     val isFormOpen by viewModel.isFormOpen.collectAsState()
     val isPurchaseDoScreenOpen by viewModel.isPurchaseDoScreenOpen.collectAsState()
+    val purchaseDoEditingTransaction by viewModel.purchaseDoEditingTransaction.collectAsState()
     val editingTransaction by viewModel.editingTransaction.collectAsState()
     val presetType by viewModel.presetType.collectAsState()
 
@@ -318,9 +319,10 @@ fun AyamKasApp(viewModel: AyamKasViewModel) {
         ) {
             if (isPurchaseDoScreenOpen) {
                 PurchaseDoScreen(
+                    initialTransaction = purchaseDoEditingTransaction,
                     onCancel = { viewModel.closePurchaseDoScreen() },
                     onSave = { date, doNumber, quantityKg, supplier, totalPrice, paidNow, paymentMethod, cashAccount,
-                               weightLossKg, mortalityRatePct, fcr, weightGainKg, feedPricePerKg, processingCost, notes, confirmed ->
+                               weightLossKg, mortalityRatePct, fcr, weightGainKg, feedPricePerKg, processingCost, notes, confirmed, editingId ->
                         viewModel.savePurchaseDo(
                             date = date,
                             doNumber = doNumber,
@@ -337,7 +339,8 @@ fun AyamKasApp(viewModel: AyamKasViewModel) {
                             feedPricePerKg = feedPricePerKg,
                             processingCost = processingCost,
                             notes = notes,
-                            confirmed = confirmed
+                            confirmed = confirmed,
+                            editingId = editingId
                         )
                     }
                 )
