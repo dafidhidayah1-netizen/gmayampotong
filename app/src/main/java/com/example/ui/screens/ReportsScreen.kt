@@ -151,7 +151,7 @@ fun ReportsScreen(
                             )
                             Spacer(modifier = Modifier.height(2.dp))
                             Text(
-                                text = "Ada ${summary.unknownSales} transaksi penjualan yang belum memiliki data kg atau belum tertaut ke DO pembelian terverifikasi. Nilai HPP belum penuh.",
+                                text = "Ada ${summary.unknownSales} penjualan dengan kg/DO yang belum valid, ${summary.outputWeightMissingCount} DO tanpa berat siap jual terverifikasi, ${summary.unlinkedBatchExpenseCount} biaya batch tanpa DO unik, dan ${summary.duplicateBatchCount} referensi DO ganda. Periksa juga daftar stok minus. Laba belum final sampai semua masalah ini selesai.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = Color(0xFF694608)
                             )
