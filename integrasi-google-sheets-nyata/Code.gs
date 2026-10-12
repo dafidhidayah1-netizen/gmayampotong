@@ -94,6 +94,7 @@ function dispatch_(action, payload) {
       return {ok:true};
     case 'saveAttendance':
       saveRecord_('AKP_Absensi', payload, 'id');
+      recalculatePayrollForAttendance_(String(payload.karyawanId || ''), String(payload.tanggal || '').slice(0,7));
       return {ok:true};
     case 'savePayroll':
       saveRecord_('AKP_Penggajian', payload, 'id');
@@ -322,6 +323,7 @@ function saveRecord_(sheetName, input, idField) {
     id = id || Utilities.getUuid();
     obj[idField] = id;
     obj.id = id;
+    const previousRecord = data.find(row => String(row.id) === id) || null;
     obj.updatedAt = new Date().toISOString();
     obj.deleted = false;
 
@@ -354,8 +356,12 @@ function saveRecord_(sheetName, input, idField) {
       const employee = list_('AKP_Karyawan').find(row => String(row.id) === String(obj.karyawanId));
       if (!employee) throw new Error('Pilih karyawan yang terdaftar.');
       obj.namaKaryawan = employee.nama;
-      obj.tarifHarian = Math.max(0,Number(employee.tarifHarian || 0));
-      obj.tarifLemburPerJam = Math.max(0,Number(employee.tarifLemburPerJam || 0));
+      obj.tarifHarian = previousRecord && previousRecord.tarifHarian !== '' && previousRecord.tarifHarian !== null
+        ? Math.max(0,Number(previousRecord.tarifHarian))
+        : Math.max(0,Number(employee.tarifHarian || 0));
+      obj.tarifLemburPerJam = previousRecord && previousRecord.tarifLemburPerJam !== '' && previousRecord.tarifLemburPerJam !== null
+        ? Math.max(0,Number(previousRecord.tarifLemburPerJam))
+        : Math.max(0,Number(employee.tarifLemburPerJam || 0));
 
       const attendance = list_('AKP_Absensi').filter(row =>
         String(row.karyawanId) === String(obj.karyawanId) &&
@@ -433,6 +439,16 @@ function syncPayrollExpense_(payroll) {
   if (result.conflict) throw new Error('Transaksi gaji pada ledger lebih baru. Muat ulang data payroll sebelum mengubah.');
   audit_('SYNC_PAYROLL','AKP_Transaksi',transactionId,'Pengeluaran gaji tersinkron dari penggajian '+payroll.id);
 }
+function recalculatePayrollForAttendance_(employeeId, period) {
+  if (!employeeId || !/^\d{4}-\d{2}$/.test(period)) return;
+  const payrolls = list_('AKP_Penggajian').filter(row =>
+    String(row.karyawanId) === employeeId && String(row.periode) === period
+  );
+  payrolls.forEach(row => {
+    saveRecord_('AKP_Penggajian',row,'id');
+  });
+}
+
 function syncTransactions_(payload) {
   setup_();
   const incoming = Array.isArray(payload.transactions) ? payload.transactions : [];
