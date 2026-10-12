@@ -18,7 +18,9 @@ data class GoogleSheetsSyncResponse(
     val deletedTransactions: List<DeletedAyamTransaction>,
     val accepted: Int,
     val serverTime: String,
-    val spreadsheetId: String
+    val spreadsheetId: String,
+    val conflicts: List<String> = emptyList(),
+    val rejectedCount: Int = 0
 )
 
 data class GoogleSheetsBackupResponse(
@@ -54,7 +56,9 @@ class GoogleSheetsSyncClient {
             deletedTransactions = response.optJSONArray("deletedTransactions").toDeletedTransactions(),
             accepted = response.optInt("accepted", 0),
             serverTime = response.optString("serverTime", ""),
-            spreadsheetId = response.optString("spreadsheetId", "")
+            spreadsheetId = response.optString("spreadsheetId", ""),
+            conflicts = response.optJSONArray("conflicts").toStringList(),
+            rejectedCount = response.optJSONArray("rejected")?.length() ?: 0
         )
     }
 
@@ -133,6 +137,16 @@ class GoogleSheetsSyncClient {
 
     private fun JSONObject.putNullable(key: String, value: Double?) {
         put(key, value ?: JSONObject.NULL)
+    }
+
+    private fun JSONArray?.toStringList(): List<String> {
+        if (this == null) return emptyList()
+        return buildList {
+            for (i in 0 until length()) {
+                val value = optString(i, "").trim()
+                if (value.isNotBlank()) add(value)
+            }
+        }
     }
 
     private fun JSONArray?.toTransactions(): List<AyamTransaction> {
