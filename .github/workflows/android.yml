@@ -18,6 +18,9 @@ jobs:
       - name: Checkout source
         uses: actions/checkout@v6
 
+      - name: Validate Google Apps Script syntax
+        run: node --check < cloud-sync/Code.gs
+
       - name: Set up JDK 17
         uses: actions/setup-java@v5
         with:
