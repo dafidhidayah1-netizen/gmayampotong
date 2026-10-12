@@ -32,6 +32,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.io.File
@@ -649,11 +650,28 @@ class AyamKasViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    fun exportJson(context: Context): Uri? {
-        val jsonStr = repository.generateJsonExport(allTransactions.value)
-        val today = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())
-        val fileName = "ayamkaspro-cadangan-$today.json"
-        return saveAndShareFile(context, fileName, jsonStr, "application/json")
+    fun exportJson(context: Context) {
+        viewModelScope.launch {
+            runCatching {
+                val jsonStr = repository.generateJsonExport(
+                    transactions = allTransactions.value,
+                    deletedTransactions = allDeleted.value,
+                    cashTransactions = repository.cashTransactions.first(),
+                    cashFlows = repository.cashFlows.first(),
+                    externalLoans = repository.externalLoans.first(),
+                    employees = repository.employees.first(),
+                    attendance = repository.attendance.first(),
+                    payroll = repository.payroll.first()
+                )
+                val today = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())
+                val fileName = "ayamkaspro-cadangan-lengkap-$today.json"
+                saveAndShareFile(context, fileName, jsonStr, "application/json")
+            }.onSuccess {
+                _userMessage.emit("Cadangan lokal lengkap dibuat. Simpan file JSON di lokasi aman.")
+            }.onFailure {
+                _userMessage.emit("Gagal membuat cadangan lengkap: ${it.message ?: "kesalahan tak diketahui"}")
+            }
+        }
     }
 
     fun exportCsv(context: Context): Uri? {
@@ -667,9 +685,10 @@ class AyamKasViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch {
             val result = repository.importJsonData(jsonContent)
             if (result.isSuccess) {
-                _userMessage.emit("Berhasil memulihkan ${result.getOrNull()} transaksi")
+                scheduleAutoSync()
+                _userMessage.emit("Berhasil memulihkan ${result.getOrNull()} transaksi dan data cadangan yang disertakan")
             } else {
-                _userMessage.emit("Gagal memulihkan: file tidak sesuai format")
+                _userMessage.emit("Gagal memulihkan: ${result.exceptionOrNull()?.message ?: "file tidak sesuai format"}")
             }
         }
     }
