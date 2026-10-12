@@ -60,7 +60,6 @@ fun ToolsBackupScreen(
     onExportCsv: () -> Unit,
     onImportJson: (String) -> Unit,
     onResetData: () -> Unit,
-    onRestoreDefaultDrafts: () -> Unit,
     onShareWhatsApp: () -> Unit,
     cloudUrl: String,
     cloudApiKey: String,
@@ -86,7 +85,6 @@ fun ToolsBackupScreen(
     var importJsonText by remember { mutableStateOf("") }
 
     var showResetDialog by remember { mutableStateOf(false) }
-    var showRestoreDefaultDialog by remember { mutableStateOf(false) }
 
     // Use only values entered by the user; never show default/sample prices as business results.
     var liveWeightKg by remember { mutableStateOf("") }
@@ -554,20 +552,6 @@ fun ToolsBackupScreen(
                     Divider()
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    // Restore Default Data
-                    OutlinedButton(
-                        onClick = { showRestoreDefaultDialog = true },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag("btn_restore_default_drafts")
-                    ) {
-                        Icon(imageVector = Icons.Default.Restore, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Muat Ulang Data Operasional Riil")
-                    }
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
                     // Reset Data
                     Button(
                         onClick = { showResetDialog = true },
@@ -681,30 +665,4 @@ fun ToolsBackupScreen(
         )
     }
 
-    // Restore Default Data Dialog
-    if (showRestoreDefaultDialog) {
-        AlertDialog(
-            onDismissRequest = { showRestoreDefaultDialog = false },
-            title = { Text("Muat Ulang Data Operasional Riil") },
-            text = {
-                Text("Tindakan ini akan mengembalikan seluruh transaksi operasional riil usaha (B-027 s/d I-002). Lanjutkan?")
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        onRestoreDefaultDrafts()
-                        showRestoreDefaultDialog = false
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF176B50))
-                ) {
-                    Text("Muat Ulang")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showRestoreDefaultDialog = false }) {
-                    Text("Batal")
-                }
-            }
-        )
-    }
 }
