@@ -307,8 +307,40 @@ class AyamKasViewModel(application: Application) : AndroidViewModel(application)
         isConfirmed: Boolean
     ) {
         viewModelScope.launch {
-            val txId = id?.ifBlank { null } ?: "TX-${System.currentTimeMillis()}"
+            val txId = id?.ifBlank { null } ?: ("TX-" + System.currentTimeMillis())
             val existing = allTransactions.value.firstOrNull { it.id == txId }
+            if (existing?.source == "payroll") {
+                _userMessage.emit("Pengeluaran gaji dibuat dari rekap Penggajian. Ubah gaji lewat modul Penggajian agar laporan tidak berbeda.")
+                closeForm()
+                return@launch
+            }
+            val ledger = allTransactions.value.filterNot { it.id == txId }
+            if (isConfirmed && type == "purchase") {
+                val duplicate = ledger.any { it.type == "purchase" && it.ref.isNotBlank() && it.ref.equals(ref.trim(), ignoreCase = true) }
+                if (ref.isBlank() || (qtyKg ?: 0.0) <= 0.0 || (saleableKg ?: 0.0) <= 0.0 || (saleableKg ?: 0.0) > (qtyKg ?: 0.0) + 0.0001 || duplicate) {
+                    _userMessage.emit("Pembelian terverifikasi wajib mempunyai nomor DO unik, kg masuk, dan kg bersih siap jual yang valid. Simpan sebagai draf bila timbang belum selesai.")
+                    return@launch
+                }
+            }
+            if (isConfirmed && type == "sale") {
+                val linked = ledger.filter { it.isConfirmed && it.type == "purchase" && it.ref.equals(batchRef.trim(), ignoreCase = true) }
+                if ((qtyKg ?: 0.0) <= 0.0 || batchRef.isBlank() || linked.size != 1 ||
+                    ((linked.firstOrNull()?.saleableKg ?: linked.firstOrNull()?.qtyKg) ?: 0.0) <= 0.0) {
+                    _userMessage.emit("Penjualan terverifikasi wajib mempunyai kg terjual dan tautan ke satu DO terverifikasi dengan HPP yang valid.")
+                    return@launch
+                }
+            }
+            if (isConfirmed && type == "expense" && batchRef.isNotBlank()) {
+                val matches = ledger.count { it.isConfirmed && it.type == "purchase" && it.ref.equals(batchRef.trim(), ignoreCase = true) }
+                if (matches != 1) {
+                    _userMessage.emit("Biaya batch harus ditautkan ke tepat satu DO terverifikasi. Kosongkan tautan jika biaya operasional umum.")
+                    return@launch
+                }
+            }
+            if (isConfirmed && type in listOf("sale","purchase","expense") && paidAmount == null) {
+                _userMessage.emit("Isi pembayaran aktual (boleh 0 bila belum dibayar) sebelum memverifikasi transaksi.")
+                return@launch
+            }
             val tx = AyamTransaction(
                 id = txId,
                 date = date,
@@ -334,41 +366,101 @@ class AyamKasViewModel(application: Application) : AndroidViewModel(application)
 
     fun toggleConfirm(tx: AyamTransaction) {
         viewModelScope.launch {
+            if (tx.source == "payroll") {
+                _userMessage.emit("Pengeluaran otomatis dari penggajian dikelola melalui modul Penggajian.")
+                return@launch
+            }
             if (tx.isConfirmed) {
                 repository.toggleConfirm(tx.id, tx.status)
                 scheduleAutoSync()
                 _userMessage.emit("Transaksi kembali menjadi Draf")
-            } else {
-                if (tx.paidAmount == null) {
-                    _userMessage.emit("Isi nominal pembayaran terlebih dahulu untuk memverifikasi")
+                return@launch
+            }
+            val transactions = allTransactions.value.filterNot { it.id == tx.id }
+            if (tx.paidAmount == null && tx.type in listOf("sale","purchase","expense")) {
+                _userMessage.emit("Isi nominal pembayaran aktual terlebih dahulu untuk memverifikasi.")
+                openForm(tx)
+                return@launch
+            }
+            if (tx.type == "purchase") {
+                val duplicate = transactions.any { it.type == "purchase" && it.ref.equals(tx.ref, ignoreCase = true) }
+                if (tx.ref.isBlank() || (tx.qtyKg ?: 0.0) <= 0.0 || (tx.saleableKg ?: 0.0) <= 0.0 || duplicate) {
+                    _userMessage.emit("DO belum siap diverifikasi. Periksa nomor DO unik, kg masuk dan berat siap jual.")
                     openForm(tx)
                     return@launch
                 }
-                repository.toggleConfirm(tx.id, tx.status)
-                scheduleAutoSync()
-                _userMessage.emit("Transaksi terverifikasi dan masuk ke laporan")
             }
+            if (tx.type == "sale") {
+                val linked = transactions.filter { it.isConfirmed && it.type == "purchase" && it.ref.equals(tx.batchRef, ignoreCase = true) }
+                if ((tx.qtyKg ?: 0.0) <= 0.0 || tx.batchRef.isBlank() || linked.size != 1) {
+                    _userMessage.emit("Penjualan belum siap diverifikasi. Isi kg dan tautkan ke satu DO terverifikasi.")
+                    openForm(tx)
+                    return@launch
+                }
+            }
+            if (tx.type == "expense" && tx.batchRef.isNotBlank()) {
+                val matches = transactions.count { it.isConfirmed && it.type == "purchase" && it.ref.equals(tx.batchRef, ignoreCase = true) }
+                if (matches != 1) {
+                    _userMessage.emit("Biaya batch tidak tertaut ke satu DO valid. Perbaiki tautan terlebih dahulu.")
+                    openForm(tx)
+                    return@launch
+                }
+            }
+            repository.toggleConfirm(tx.id, tx.status)
+            scheduleAutoSync()
+            _userMessage.emit("Transaksi terverifikasi dan masuk ke laporan")
         }
     }
 
     fun confirmAllDrafts() {
         viewModelScope.launch {
-            val drafts = allTransactions.value.filter { it.isDraft }
-            drafts.forEach { t ->
-                // Ensure paidAmount is filled if null
-                val updated = if (t.paidAmount == null) t.copy(paidAmount = t.amount, status = "confirmed") else t.copy(status = "confirmed")
-                repository.saveTransaction(updated)
+            val records = allTransactions.value
+            val drafts = records.filter { it.isDraft && it.source != "payroll" }
+            val purchases = records.filter { it.type == "purchase" }
+            val groups = purchases.filter { it.ref.isNotBlank() }.groupBy { it.ref.trim().lowercase() }
+            val eligibleDoRefs = groups.filterValues { it.size == 1 }.filterValues { list ->
+                val p = list.single()
+                (p.qtyKg ?: 0.0) > 0.0 && (p.saleableKg ?: 0.0) > 0.0 && p.amount > 0.0
+            }.keys
+            var confirmed = 0
+            var skipped = 0
+            val sorted = drafts.sortedBy {
+                when (it.type) {
+                    "purchase" -> 0
+                    "expense" -> 1
+                    "sale" -> 2
+                    else -> 3
+                }
             }
-            scheduleAutoSync()
-            _userMessage.emit("${drafts.size} catatan berhasil diverifikasi")
+            sorted.forEach { tx ->
+                val paymentKnown = tx.type !in listOf("sale","purchase","expense") || tx.paidAmount != null
+                val typeDataValid = when (tx.type) {
+                    "purchase" -> tx.ref.isNotBlank() && tx.ref.trim().lowercase() in eligibleDoRefs &&
+                        (tx.qtyKg ?: 0.0) > 0.0 && (tx.saleableKg ?: 0.0) > 0.0
+                    "sale" -> (tx.qtyKg ?: 0.0) > 0.0 && tx.batchRef.trim().lowercase() in eligibleDoRefs
+                    "expense" -> tx.batchRef.isBlank() || tx.batchRef.trim().lowercase() in eligibleDoRefs
+                    else -> true
+                }
+                if (tx.amount > 0.0 && tx.date.isNotBlank() && tx.description.isNotBlank() && paymentKnown && typeDataValid) {
+                    repository.saveTransaction(tx.copy(status = "confirmed"))
+                    confirmed++
+                } else skipped++
+            }
+            if (confirmed > 0) scheduleAutoSync()
+            _userMessage.emit(confirmed.toString() + " catatan diverifikasi; " + skipped.toString() +
+                " tetap draf karena data, pembayaran atau tautan DO belum lengkap.")
         }
     }
 
     fun deleteTransaction(tx: AyamTransaction) {
         viewModelScope.launch {
+            if (tx.source == "payroll") {
+                _userMessage.emit("Pengeluaran gaji dibuat otomatis. Arsipkan atau ubah dari modul Penggajian.")
+                return@launch
+            }
             repository.deleteTransaction(tx)
             scheduleAutoSync()
-            _userMessage.emit("Transaksi “${tx.description}” dihapus")
+            _userMessage.emit("Transaksi dihapus dari daftar dan disimpan dalam arsip")
         }
     }
 
