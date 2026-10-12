@@ -24,21 +24,26 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      # This project has no Gradle Wrapper script/JAR committed yet,
-      # so install the exact Gradle version declared in gradle-wrapper.properties.
+      # Gradle wrapper scripts/JAR are not committed in this repository.
+      # Install the exact Gradle distribution declared by gradle-wrapper.properties.
       - name: Set up Gradle 9.3.1
         uses: gradle/actions/setup-gradle@v6
         with:
           gradle-version: "9.3.1"
           cache-provider: basic
 
-      - name: Show Android SDK
+      - name: Install Android SDK Platform 36.1
         run: |
-          echo "ANDROID_HOME=${ANDROID_HOME}"
-          test -d "${ANDROID_HOME}/platform-tools"
-          ls "${ANDROID_HOME}/platforms"
+          yes | sdkmanager --licenses >/dev/null
+          sdkmanager "platforms;android-36.1" "build-tools;36.0.0" "platform-tools"
 
-      - name: Run unit tests and build debug APK
+      # The app's debug signing config uses a root-level debug.keystore.
+      # Generate a CI-only key so no private signing key is committed to Git.
+      - name: Generate CI debug keystore
+        run: |
+          keytool -genkeypair -v             -keystore debug.keystore             -storepass android             -alias androiddebugkey             -keypass android             -keyalg RSA             -keysize 2048             -validity 10000             -dname "CN=Android Debug,O=AyamKas Pro,C=ID"             -noprompt
+
+      - name: Build and run unit tests
         run: gradle --no-daemon clean testDebugUnitTest assembleDebug
 
       - name: Upload debug APK
