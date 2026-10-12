@@ -52,8 +52,8 @@ object BusinessLedgerCalculator {
         require(allowance >= 0.0 && deductions >= 0.0) { "Tunjangan dan potongan tidak boleh negatif" }
         val base = daysPresent * dailyRate
         val overtime = overtimeHours * overtimeRatePerHour
+        // Keep a negative draft visible so an excessive deduction cannot be silently hidden.
         val total = base + overtime + allowance - deductions
-        require(total >= 0.0) { "Total gaji bersih tidak boleh negatif" }
         return PayrollAmounts(base, overtime, allowance, deductions, total)
     }
 
