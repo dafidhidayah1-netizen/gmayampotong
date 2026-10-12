@@ -6,17 +6,17 @@
 const APP_NAME = 'AyamKas Pro';
 const API_TOKEN_PROPERTY = 'AYAMKAS_API_TOKEN';
 const SHEETS = {
-  Transaksi: [
+  AKP_Transaksi: [
     'id','createdAt','tanggal','jenis','kategori','keterangan','nominal','dibayar',
     'qtyKg','kgSiapJual','batchRef','catatan','status','statusPembayaran','metode',
     'pihak','referensi','sisa','updatedAt','deleted','source',
     'hppPerKg','hppJual','labaKotor','kgSisa','statusHpp'
   ],
-  Karyawan: ['id','nama','jabatan','tarifHarian','tarifLemburPerJam','aktif','updatedAt','deleted'],
-  Absensi: ['id','tanggal','karyawanId','namaKaryawan','status','jamMasuk','jamPulang','lemburJam','catatan','updatedAt','deleted'],
-  Penggajian: ['id','periode','karyawanId','namaKaryawan','hariHadir','lemburJam','tarifHarian','tarifLemburPerJam','gajiPokok','uangLembur','bonus','potongan','total','statusBayar','updatedAt','deleted'],
-  AuditLog: ['waktu','user','aksi','sheet','recordId','detail'],
-  Ringkasan: ['indikator','nilai','rumus_dan_penjelasan','diperbarui']
+  AKP_Karyawan: ['id','nama','jabatan','tarifHarian','tarifLemburPerJam','aktif','updatedAt','deleted'],
+  AKP_Absensi: ['id','tanggal','karyawanId','namaKaryawan','status','jamMasuk','jamPulang','lemburJam','catatan','updatedAt','deleted'],
+  AKP_Penggajian: ['id','periode','karyawanId','namaKaryawan','hariHadir','lemburJam','tarifHarian','tarifLemburPerJam','gajiPokok','uangLembur','bonus','potongan','total','statusBayar','updatedAt','deleted'],
+  AKP_AuditLog: ['waktu','user','aksi','sheet','recordId','detail'],
+  AKP_Ringkasan: ['indikator','nilai','rumus_dan_penjelasan','diperbarui']
 };
 
 const TRANSACTION_TYPES = [
@@ -75,28 +75,28 @@ function dispatch_(action, payload) {
         app:APP_NAME,
         spreadsheetId:SpreadsheetApp.getActiveSpreadsheet().getId(),
         sheets:Object.keys(SHEETS),
-        transactions:list_('Transaksi'),
-        summary:list_('Ringkasan'),
-        employees:list_('Karyawan'),
-        attendance:list_('Absensi'),
-        payroll:list_('Penggajian')
+        transactions:list_('AKP_Transaksi'),
+        summary:list_('AKP_Ringkasan'),
+        employees:list_('AKP_Karyawan'),
+        attendance:list_('AKP_Absensi'),
+        payroll:list_('AKP_Penggajian')
       };
     case 'saveTransaction':
       saveTransaction_(payload);
       recalculate_();
-      return {ok:true,transactions:list_('Transaksi')};
+      return {ok:true,transactions:list_('AKP_Transaksi')};
     case 'deleteTransaction':
-      softDelete_('Transaksi', payload.id);
+      softDelete_('AKP_Transaksi', payload.id);
       recalculate_();
       return {ok:true};
     case 'saveEmployee':
-      saveRecord_('Karyawan', payload, 'id');
+      saveRecord_('AKP_Karyawan', payload, 'id');
       return {ok:true};
     case 'saveAttendance':
-      saveRecord_('Absensi', payload, 'id');
+      saveRecord_('AKP_Absensi', payload, 'id');
       return {ok:true};
     case 'savePayroll':
-      saveRecord_('Penggajian', payload, 'id');
+      saveRecord_('AKP_Penggajian', payload, 'id');
       return {ok:true};
     case 'backup':
       return backup_();
@@ -264,9 +264,9 @@ function upsertModel_(model) {
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
-    const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Transaksi');
+    const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('AKP_Transaksi');
     const headers = headers_(sh);
-    const all = list_('Transaksi', true);
+    const all = list_('AKP_Transaksi', true);
     const index = all.findIndex(row => String(row.id) === model.id);
     const targetRow = index >= 0 ? index + 2 : 0;
     const existing = index >= 0 ? sheetToModel_(all[index]) : null;
@@ -293,7 +293,7 @@ function saveTransaction_(payload) {
   const model = normalizeTransaction_(payload);
   const result = upsertModel_(model);
   if (result.conflict) throw new Error('Data yang lebih baru sudah ada di Google Sheets. Muat ulang sebelum mengedit.');
-  audit_('SAVE','Transaksi',model.id,JSON.stringify({type:model.type,amount:model.amount,status:model.status}));
+  audit_('SAVE','AKP_Transaksi',model.id,JSON.stringify({type:model.type,amount:model.amount,status:model.status}));
   return {id:model.id};
 }
 
@@ -306,11 +306,11 @@ function saveRecord_(sheetName, input, idField) {
     const headers = headers_(sh);
     const id = String(obj[idField] || Utilities.getUuid());
     obj.id = id; obj.updatedAt = new Date().toISOString(); obj.deleted = false;
-    if (sheetName === 'Karyawan') {
+    if (sheetName === 'AKP_Karyawan') {
       if (!String(obj.nama || '').trim()) throw new Error('Nama karyawan wajib diisi.');
       if (Number(obj.tarifHarian || 0) < 0 || Number(obj.tarifLemburPerJam || 0) < 0) throw new Error('Tarif tidak boleh negatif.');
     }
-    if (sheetName === 'Penggajian') {
+    if (sheetName === 'AKP_Penggajian') {
       obj.hariHadir = Number(obj.hariHadir || 0);
       obj.lemburJam = Number(obj.lemburJam || 0);
       obj.tarifHarian = Number(obj.tarifHarian || 0);
@@ -361,9 +361,9 @@ function syncTransactions_(payload) {
     const lock = LockService.getScriptLock();
     lock.waitLock(15000);
     try {
-      const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Transaksi');
+      const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('AKP_Transaksi');
       const headers = headers_(sh);
-      const rows = list_('Transaksi',true);
+      const rows = list_('AKP_Transaksi',true);
       const deletedCol = headers.indexOf('deleted')+1;
       const updatedCol = headers.indexOf('updatedAt')+1;
       deletedIds.forEach(id => {
@@ -372,7 +372,7 @@ function syncTransactions_(payload) {
           const row = index+2;
           sh.getRange(row,deletedCol).setValue(true);
           sh.getRange(row,updatedCol).setValue(new Date().toISOString());
-          audit_('SOFT_DELETE','Transaksi',id,'Dihapus dari perangkat dan diarsipkan di cloud');
+          audit_('SOFT_DELETE','AKP_Transaksi',id,'Dihapus dari perangkat dan diarsipkan di cloud');
         }
       });
     } finally {
@@ -399,7 +399,7 @@ function syncTransactions_(payload) {
 }
 
 function readTransactionModels_(includeDeleted) {
-  return list_('Transaksi', !!includeDeleted).map(row => {
+  return list_('AKP_Transaksi', !!includeDeleted).map(row => {
     const model = sheetToModel_(row);
     model.hppPerKg = Number(row.hppPerKg || 0);
     model.hppJual = Number(row.hppJual || 0);
@@ -411,7 +411,7 @@ function readTransactionModels_(includeDeleted) {
 }
 
 function recalculate_() {
-  const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Transaksi');
+  const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('AKP_Transaksi');
   if (!sh || sh.getLastRow() < 2) { updateSummary_(); return; }
   const h = headers_(sh);
   const idx = {};
@@ -440,8 +440,8 @@ function recalculate_() {
 
 function updateSummary_() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sh = ss.getSheetByName('Ringkasan');
-  const tx = ss.getSheetByName('Transaksi');
+  const sh = ss.getSheetByName('AKP_Ringkasan');
+  const tx = ss.getSheetByName('AKP_Transaksi');
   if (!sh || !tx) return;
   const h = headers_(tx), ix={};
   h.forEach((name,i)=>ix[name]=i+1);
@@ -450,9 +450,9 @@ function updateSummary_() {
   const r = n => t+'$'+L(n)+'$2:$'+L(n);
   const typ=r('jenis'), amount=r('nominal'), paid=r('dibayar'), kg=r('qtyKg'), batch=r('batchRef'),
         ver=r('status'), del=r('deleted'), hpp=r('hppJual'), kgRemain=r('kgSisa');
-  const confirmed = ver+', "confirmed", '+del+', FALSE';
+  const confirmed = ver+', "confirmed", '+del+', "<>TRUE"';
   const sum = (field, type) => '=SUMIFS('+r(field)+','+typ+',"'+type+'",'+confirmed+')';
-  const countHppMissing = '=COUNTIFS('+typ+',"sale",'+ver+',"confirmed",'+del+',FALSE,'+r('statusHpp')+',"HPP BELUM LENGKAP")';
+  const countHppMissing = '=COUNTIFS('+typ+',"sale",'+ver+',"confirmed",'+del+',"<>TRUE",'+r('statusHpp')+',"HPP BELUM LENGKAP")';
   const formulas = [
     ['Omzet penjualan',sum('nominal','sale'),'Jumlah nominal transaksi penjualan terverifikasi; bukan penerimaan kas.'],
     ['HPP ayam terjual','=SUMIFS('+hpp+','+typ+',"sale",'+confirmed+')','Kg terjual × HPP/kg dari DO yang ditautkan. DO yang tidak unik atau belum lengkap tidak boleh dianggap memiliki HPP valid.'],
@@ -498,7 +498,7 @@ function softDelete_(sheetName,id) {
 }
 
 function audit_(action,sheet,id,detail) {
-  const sh=SpreadsheetApp.getActiveSpreadsheet().getSheetByName('AuditLog');
+  const sh=SpreadsheetApp.getActiveSpreadsheet().getSheetByName('AKP_AuditLog');
   if (!sh) return;
   let user='pengguna-terotorisasi';
   try { user=Session.getActiveUser().getEmail() || user; } catch (e) {}
