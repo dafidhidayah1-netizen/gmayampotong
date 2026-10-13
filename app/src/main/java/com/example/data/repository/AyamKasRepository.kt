@@ -9,6 +9,7 @@ import com.example.data.model.ExternalLoan
 import com.example.data.model.EmployeeRecord
 import com.example.data.model.AttendanceRecord
 import com.example.data.model.PayrollRecord
+import com.example.data.model.TransactionAuditLog
 import com.example.data.model.AyamTransactionType
 import com.example.data.model.AyamKasFormatters
 import com.example.data.model.AyamKasCalculator
@@ -43,13 +44,56 @@ class AyamKasRepository(
     val employees: Flow<List<EmployeeRecord>> = businessDao.observeEmployees()
     val attendance: Flow<List<AttendanceRecord>> = businessDao.observeAttendance()
     val payroll: Flow<List<PayrollRecord>> = businessDao.observePayroll()
+    val auditLog: Flow<List<TransactionAuditLog>> = businessDao.observeAuditLog()
 
     suspend fun saveTransaction(tx: AyamTransaction) {
         // Enforce rules in the repository too, so UI paths cannot bypass validation.
         if (tx.isConfirmed) validateForConfirmation(tx)
+        val before = dao.getTransactionById(tx.id)
         val saved = tx.copy(updatedAt = nowIso())
         dao.insertTransaction(saved)
         updateCashMirror(saved)
+        val action = when {
+            before == null -> "BUAT"
+            before.status != saved.status -> if (saved.isConfirmed) "KONFIRMASI" else "KEMBALI_DRAF"
+            else -> "UBAH"
+        }
+        appendTransactionAudit(action, before, saved)
+    }
+
+    private fun transactionAuditSummary(tx: AyamTransaction?): String {
+        if (tx == null) return "—"
+        return listOf(
+            "Tanggal=${tx.date}",
+            "Ref=${tx.ref.ifBlank { "—" }}",
+            "Jenis=${AyamTransactionType.fromKey(tx.type).label}",
+            "Nominal=${AyamKasFormatters.formatRupiah(tx.amount)}",
+            "Kas aktual=${tx.paidAmount?.let(AyamKasFormatters::formatRupiah) ?: "belum diisi"}",
+            "Status=${if (tx.isConfirmed) "Terverifikasi" else "Draf"}",
+            "DO=${tx.batchRef.ifBlank { "—" }}"
+        ).joinToString(" · ")
+    }
+
+    private suspend fun appendTransactionAudit(
+        action: String,
+        before: AyamTransaction?,
+        after: AyamTransaction?,
+        note: String = ""
+    ) {
+        val tx = after ?: before ?: return
+        businessDao.appendAuditLog(
+            TransactionAuditLog(
+                id = "AUD-${java.util.UUID.randomUUID()}",
+                entityType = "TRANSAKSI",
+                entityId = tx.id,
+                action = action,
+                occurredAt = nowIso(),
+                actor = "Perangkat ini",
+                summary = note.ifBlank { "${action}: ${tx.description}" },
+                beforeData = transactionAuditSummary(before),
+                afterData = transactionAuditSummary(after)
+            )
+        )
     }
 
     private suspend fun updateCashMirror(tx: AyamTransaction) {
@@ -203,6 +247,7 @@ class AyamKasRepository(
         val saved = current.copy(status = if (confirming) "confirmed" else "draft", updatedAt = nowIso())
         dao.insertTransaction(saved)
         updateCashMirror(saved)
+        appendTransactionAudit(if (confirming) "KONFIRMASI" else "KEMBALI_DRAF", current, saved)
     }
 
     suspend fun confirmTransaction(id: String) {
@@ -211,6 +256,7 @@ class AyamKasRepository(
         val saved = current.copy(status = "confirmed", updatedAt = nowIso())
         dao.insertTransaction(saved)
         updateCashMirror(saved)
+        appendTransactionAudit("KONFIRMASI", current, saved)
     }
 
     private suspend fun validateForConfirmation(tx: AyamTransaction) {
@@ -423,6 +469,7 @@ class AyamKasRepository(
         ))
         dao.deleteTransaction(tx.id)
         businessDao.deleteCashForSource(tx.id)
+        appendTransactionAudit("HAPUS_ARSIP", tx, null, "Transaksi dihapus ke arsip: ${tx.description}")
     }
 
     suspend fun restoreDeleted(deleted: DeletedAyamTransaction) {
