@@ -214,7 +214,7 @@ class AyamKasRepository(
     }
 
     private suspend fun validateForConfirmation(tx: AyamTransaction) {
-        require(tx.date.matches(Regex("\\d{4}-\\d{2}-\\d{2}"))) { "Tanggal harus berformat YYYY-MM-DD" }
+        require(AyamKasFormatters.isValidIsoDate(tx.date)) { "Tanggal tidak valid. Pilih tanggal nyata dengan format YYYY-MM-DD." }
         require(tx.amount > 0.0) { "Nominal harus lebih dari nol" }
         if (tx.type in listOf("sale", "purchase", "expense")) {
             require(tx.paidAmount != null && tx.paidAmount >= 0.0 && tx.paidAmount <= tx.amount) {
