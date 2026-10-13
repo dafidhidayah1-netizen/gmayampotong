@@ -407,7 +407,7 @@ fun AyamKasApp(viewModel: AyamKasViewModel) {
                         DropdownMenu(expanded = showMoreMenu, onDismissRequest = { showMoreMenu = false }) {
                             DropdownMenuItem(text = { Text("Kas & Pinjaman") }, onClick = { currentTab = AyamNavTab.FINANCE; showMoreMenu = false })
                             DropdownMenuItem(text = { Text("Karyawan & Payroll") }, onClick = { currentTab = AyamNavTab.WORKFORCE; showMoreMenu = false })
-                            DropdownMenuItem(text = { Text("Pengaturan Perusahaan & Master Data") }, onClick = { currentTab = AyamNavTab.SETTINGS; showMoreMenu = false })
+                            DropdownMenuItem(text = { Text("Profil Perusahaan & Tampilan") }, onClick = { currentTab = AyamNavTab.SETTINGS; showMoreMenu = false })
                             DropdownMenuItem(text = { Text("Audit Aktivitas") }, onClick = { currentTab = AyamNavTab.AUDIT; showMoreMenu = false })
                         }
                     }
