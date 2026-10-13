@@ -220,31 +220,55 @@ class AyamKasRepository(
         BusinessLedgerCalculator.workedHours(clockIn, clockOut, breakMinutes)
 
     suspend fun savePayroll(record: PayrollRecord) {
+        require(record.period.matches(Regex("\\d{4}-(0[1-9]|1[0-2])"))) { "Periode payroll harus YYYY-MM yang valid" }
         require(record.daysPresent >= 0.0 && record.overtimeHours >= 0.0) { "Hari hadir/jam lembur tidak boleh negatif" }
-        require(record.deductions >= 0.0 && record.paidAmount >= 0.0 && record.paidAmount <= record.totalPay) { "Potongan/pembayaran tidak valid" }
-        require(record.totalPay >= 0.0) { "Total upah tidak boleh negatif" }
-        val saved = record.copy(updatedAt = nowIso())
-        businessDao.savePayroll(saved)
-        // Approved payroll becomes one linked expense row. The actual paid amount,
-        // not the whole payroll value, is the cash movement.
-        val periodDate = if (saved.period.length == 7) "${saved.period}-01" else saved.period
-        saveTransaction(
-            AyamTransaction(
-                id = "PAYROLL-${saved.id}",
-                date = periodDate,
-                ref = "PAY-${saved.period}-${saved.employeeId}",
-                type = "expense",
-                category = "Gaji",
-                description = "Upah ${saved.employeeName} periode ${saved.period}",
-                amount = saved.totalPay,
-                paidAmount = saved.paidAmount,
-                notes = "Rekap payroll ${saved.id}. ${saved.notes}",
-                status = if (saved.status == "DRAFT") "draft" else "confirmed",
-                source = "payroll",
-                paymentMethod = saved.paymentMethod,
-                cashAccount = saved.cashAccount
-            )
+        require(record.deductions >= 0.0 && record.paidAmount >= 0.0) { "Potongan/pembayaran tidak boleh negatif" }
+        require(record.status in setOf("DRAFT", "APPROVED", "PART_PAID", "PAID")) { "Status payroll tidak valid" }
+        val employee = businessDao.getEmployee(record.employeeId)
+            ?: throw IllegalArgumentException("Master karyawan tidak ditemukan")
+        val amounts = BusinessLedgerCalculator.calculatePayroll(
+            daysPresent = record.daysPresent,
+            dailyRate = record.dailyRate,
+            overtimeHours = record.overtimeHours,
+            overtimeRatePerHour = employee.overtimeRatePerHour,
+            allowance = record.allowance,
+            deductions = record.deductions
         )
+        require(amounts.totalPay >= 0.0) { "Total gaji setelah potongan tidak boleh negatif" }
+        require(record.paidAmount <= amounts.totalPay) { "Pembayaran melebihi total gaji yang dihitung ulang" }
+        if (record.status != "DRAFT") {
+            require(amounts.totalPay > 0.0) { "Total gaji harus lebih dari nol sebelum disetujui" }
+        }
+
+        // The repository is authoritative for pay math; do not trust totals sent by the UI.
+        val saved = record.copy(
+            basePay = amounts.basePay,
+            overtimePay = amounts.overtimePay,
+            allowance = amounts.allowance,
+            deductions = amounts.deductions,
+            totalPay = amounts.totalPay,
+            updatedAt = nowIso()
+        )
+        val periodDate = "${saved.period}-01"
+        val payrollTransaction = AyamTransaction(
+            id = "PAYROLL-${saved.id}",
+            date = periodDate,
+            ref = "PAY-${saved.period}-${saved.employeeId}",
+            type = "expense",
+            category = "Gaji",
+            description = "Upah ${saved.employeeName} periode ${saved.period}",
+            amount = saved.totalPay,
+            paidAmount = saved.paidAmount,
+            notes = "Rekap payroll ${saved.id}. ${saved.notes}",
+            status = if (saved.status == "DRAFT") "draft" else "confirmed",
+            source = "payroll",
+            paymentMethod = saved.paymentMethod,
+            cashAccount = saved.cashAccount
+        )
+        database.withTransaction {
+            businessDao.savePayroll(saved)
+            saveTransaction(payrollTransaction)
+        }
     }
 
     suspend fun toggleConfirm(id: String, currentStatus: String) {
