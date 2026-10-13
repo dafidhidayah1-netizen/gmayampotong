@@ -6,6 +6,7 @@ import com.example.data.model.AyamTransaction
 import com.example.data.model.BusinessLedgerCalculator
 import com.example.data.model.ExternalLoan
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
