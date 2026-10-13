@@ -79,6 +79,20 @@ fun FinanceScreen(
     var confirmedLoan by remember { mutableStateOf(true) }
 
     val accounts = listOf("DOMPET", "ATM/BANK", "QRIS")
+    val loanTypeLabels = linkedMapOf(
+        "OWNER_LOAN" to "Pinjaman dari pemilik",
+        "BUSINESS_BORROWING" to "Pinjaman usaha dari pihak lain",
+        "BUSINESS_LENDING" to "Pinjaman usaha ke pihak lain",
+        "OWNER_PERSONAL" to "Pengeluaran pribadi pemilik",
+        "UNEXPECTED_COST" to "Pengeluaran lain di luar operasional",
+        "OWNER_INJECTION" to "Tambahan modal pemilik"
+    )
+    val directionLabels = linkedMapOf(
+        "RECEIVED" to "Dana diterima",
+        "REPAYMENT" to "Bayar angsuran / pelunasan",
+        "GIVEN" to "Dana diberikan / dikeluarkan",
+        "COLLECTION" to "Terima angsuran / penagihan"
+    )
     val loanDirectionOptions = when (loanType) {
         "OWNER_LOAN", "BUSINESS_BORROWING" -> listOf("RECEIVED", "REPAYMENT")
         "BUSINESS_LENDING" -> listOf("GIVEN", "COLLECTION")
@@ -136,6 +150,7 @@ fun FinanceScreen(
             Card(shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
                 Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text("Transfer antar rekening", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Text("Contoh: pindah uang dari ATM ke dompet. Ini bukan pemasukan atau biaya baru.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     OutlinedTextField(value = date, onValueChange = { date = it }, label = { Text("Tanggal (YYYY-MM-DD)") }, modifier = Modifier.fillMaxWidth().testTag("input_cashflow_date"), singleLine = true)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                         Column(Modifier.weight(1f)) {
@@ -162,7 +177,7 @@ fun FinanceScreen(
                     }
                     Button(onClick = {
                         val amount = amountText.toDoubleOrNull() ?: 0.0
-                        if (date.length == 10 && amount > 0 && fromAccount != toAccount) {
+                        if (com.example.data.model.AyamKasFormatters.isValidIsoDate(date) && amount > 0 && fromAccount != toAccount) {
                             onSaveCashFlow(CashFlow(UUID.randomUUID().toString(), date, fromAccount, toAccount, amount, reference.trim(), transferNotes.trim(), if (confirmedTransfer) "confirmed" else "draft", ""))
                             amountText = ""; reference = ""; transferNotes = ""
                         }
@@ -183,11 +198,11 @@ fun FinanceScreen(
                         supportingText = { Text("Gunakan referensi yang sama untuk pencairan dan setiap angsuran agar sisa pinjaman dihitung akurat.") },
                         modifier = Modifier.fillMaxWidth().testTag("input_loan_reference"), singleLine = true
                     )
-                    Text("Kategori")
-                    OutlinedButton(onClick = { loanTypeMenu = true }, modifier = Modifier.fillMaxWidth().testTag("select_loan_type")) { Text(loanType) }
+                    Text("Jenis transaksi")
+                    OutlinedButton(onClick = { loanTypeMenu = true }, modifier = Modifier.fillMaxWidth().testTag("select_loan_type")) { Text(loanTypeLabels[loanType] ?: loanType) }
                     DropdownMenu(expanded = loanTypeMenu, onDismissRequest = { loanTypeMenu = false }) {
                         listOf("OWNER_LOAN", "BUSINESS_BORROWING", "BUSINESS_LENDING", "OWNER_PERSONAL", "UNEXPECTED_COST", "OWNER_INJECTION").forEach { a ->
-                            DropdownMenuItem(text = { Text(a) }, onClick = {
+                            DropdownMenuItem(text = { Text(loanTypeLabels[a] ?: a) }, onClick = {
                                 loanType = a
                                 val allowed = when (a) {
                                     "OWNER_LOAN", "BUSINESS_BORROWING" -> listOf("RECEIVED", "REPAYMENT")
@@ -201,10 +216,10 @@ fun FinanceScreen(
                         }
                     }
                     Text("Arah kas")
-                    OutlinedButton(onClick = { loanDirectionMenu = true }, modifier = Modifier.fillMaxWidth().testTag("select_loan_direction")) { Text(direction) }
+                    OutlinedButton(onClick = { loanDirectionMenu = true }, modifier = Modifier.fillMaxWidth().testTag("select_loan_direction")) { Text(directionLabels[direction] ?: direction) }
                     DropdownMenu(expanded = loanDirectionMenu, onDismissRequest = { loanDirectionMenu = false }) {
                         loanDirectionOptions.forEach { a ->
-                            DropdownMenuItem(text = { Text(a) }, onClick = { direction = a; loanDirectionMenu = false })
+                            DropdownMenuItem(text = { Text(directionLabels[a] ?: a) }, onClick = { direction = a; loanDirectionMenu = false })
                         }
                     }
                     OutlinedTextField(value = loanAmount, onValueChange = { loanAmount = it.filter(Char::isDigit) }, label = { Text("Nominal peristiwa kas (Rp)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.fillMaxWidth().testTag("input_loan_amount"), singleLine = true)
@@ -222,7 +237,7 @@ fun FinanceScreen(
                     Button(onClick = {
                         val amount = loanAmount.toDoubleOrNull() ?: 0.0
                         val balanceTracked = loanType in listOf("OWNER_LOAN", "BUSINESS_BORROWING", "BUSINESS_LENDING")
-                        if (loanDate.length == 10 && party.isNotBlank() && amount > 0.0 &&
+                        if (com.example.data.model.AyamKasFormatters.isValidIsoDate(loanDate) && party.isNotBlank() && amount > 0.0 &&
                             (!balanceTracked || loanReference.isNotBlank()) &&
                             (direction !in listOf("REPAYMENT", "COLLECTION") || loanReference.isNotBlank())
                         ) {
