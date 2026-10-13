@@ -12,6 +12,11 @@ import com.example.data.model.AyamKasCalculator
 import com.example.data.model.AyamKasFormatters
 import com.example.data.model.AyamKasSummary
 import com.example.data.model.AyamTransaction
+import com.example.data.model.CashFlow
+import com.example.data.model.ExternalLoan
+import com.example.data.model.EmployeeRecord
+import com.example.data.model.AttendanceRecord
+import com.example.data.model.PayrollRecord
 import com.example.data.model.AyamTransactionType
 import com.example.data.model.DeletedAyamTransaction
 import com.example.data.model.DoStockItem
@@ -27,6 +32,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.io.File
@@ -37,6 +43,10 @@ import java.util.Locale
 class AyamKasViewModel(application: Application) : AndroidViewModel(application) {
 
     private val cloudPrefs = application.getSharedPreferences("ayamkaspro_cloud", Context.MODE_PRIVATE)
+    private val businessPrefs = application.getSharedPreferences("ayamkaspro_business", Context.MODE_PRIVATE)
+    val companyName = MutableStateFlow(businessPrefs.getString("companyName", "GM Ayam Potong").orEmpty().ifBlank { "GM Ayam Potong" })
+    val companyLogoUri = MutableStateFlow(businessPrefs.getString("companyLogoUri", "").orEmpty())
+    val themeMode = MutableStateFlow(businessPrefs.getString("themeMode", "SYSTEM").orEmpty())
     private val cloudClient = GoogleSheetsSyncClient()
     val cloudUrl = MutableStateFlow(cloudPrefs.getString("url", "").orEmpty())
     val cloudApiKey = MutableStateFlow(cloudPrefs.getString("apiKey", "").orEmpty())
@@ -45,9 +55,35 @@ class AyamKasViewModel(application: Application) : AndroidViewModel(application)
     val cloudStatus = MutableStateFlow("Belum disambungkan")
     val lastCloudSyncAt = MutableStateFlow(cloudPrefs.getString("lastSyncAt", "").orEmpty())
     private var pendingAutoSync: Job? = null
-    private val repository: AyamKasRepository
+    private val repository: AyamKasRepository by lazy {
+        val db = KasDatabase.getDatabase(application)
+        AyamKasRepository(db.ayamKasDao(), db.businessLedgerDao())
+    }
     val allTransactions: StateFlow<List<AyamTransaction>>
     val allDeleted: StateFlow<List<DeletedAyamTransaction>>
+    val cashTransactions = repository.cashTransactions
+    val cashFlows = repository.cashFlows
+    val externalLoans = repository.externalLoans
+    val employees = repository.employees
+    val attendance = repository.attendance
+    val payroll = repository.payroll
+
+    val cashAccountBalances: StateFlow<Map<String, Double>> = combine(
+        repository.confirmedCashTransactions,
+        repository.cashFlows
+    ) { movements, transfers ->
+        val balances = linkedMapOf("DOMPET" to 0.0, "ATM/BANK" to 0.0, "QRIS" to 0.0)
+        movements.filter { it.status == "confirmed" && !it.deleted }.forEach { movement ->
+            val account = movement.accountName.ifBlank { "DOMPET" }
+            val amount = if (movement.direction == "IN") movement.amount else -movement.amount
+            balances[account] = (balances[account] ?: 0.0) + amount
+        }
+        transfers.filter { it.status == "confirmed" && it.amount > 0.0 }.forEach { transfer ->
+            balances[transfer.fromAccount] = (balances[transfer.fromAccount] ?: 0.0) - transfer.amount
+            balances[transfer.toAccount] = (balances[transfer.toAccount] ?: 0.0) + transfer.amount
+        }
+        balances
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
     val searchQuery = MutableStateFlow("")
     val typeFilter = MutableStateFlow("all")
@@ -60,14 +96,13 @@ class AyamKasViewModel(application: Application) : AndroidViewModel(application)
     val isFormOpen = MutableStateFlow(false)
     val editingTransaction = MutableStateFlow<AyamTransaction?>(null)
     val presetType = MutableStateFlow<String?>(null)
+    val isPurchaseDoScreenOpen = MutableStateFlow(false)
+    val purchaseDoEditingTransaction = MutableStateFlow<AyamTransaction?>(null)
 
     private val _userMessage = MutableSharedFlow<String>()
     val userMessage = _userMessage.asSharedFlow()
 
     init {
-        val db = KasDatabase.getDatabase(application)
-        repository = AyamKasRepository(db.ayamKasDao())
-
         allTransactions = repository.allTransactions.stateIn(
             viewModelScope,
             SharingStarted.Eagerly,
@@ -81,7 +116,8 @@ class AyamKasViewModel(application: Application) : AndroidViewModel(application)
         )
 
         viewModelScope.launch {
-            repository.ensureSeededInitialData()
+            // Never preload historical transactions silently. New installations start empty;
+            // records enter only through explicit user entry or restore/import.
             if (autoSyncEnabled.value && cloudUrl.value.isNotBlank() && cloudApiKey.value.isNotBlank()) {
                 delay(900)
                 performCloudSync()
@@ -190,6 +226,30 @@ class AyamKasViewModel(application: Application) : AndroidViewModel(application)
         emptyList()
     )
 
+    fun saveBusinessSettings(nameInput: String, themeModeInput: String) {
+        val name = nameInput.trim()
+        val theme = themeModeInput.uppercase(Locale.ROOT)
+        if (name.isBlank()) {
+            viewModelScope.launch { _userMessage.emit("Nama perusahaan tidak boleh kosong") }
+            return
+        }
+        if (theme !in setOf("SYSTEM", "LIGHT", "DARK")) {
+            viewModelScope.launch { _userMessage.emit("Mode tema tidak valid") }
+            return
+        }
+        businessPrefs.edit().putString("companyName", name).putString("themeMode", theme).apply()
+        companyName.value = name
+        themeMode.value = theme
+        viewModelScope.launch { _userMessage.emit("Nama perusahaan dan tema tersimpan") }
+    }
+
+    fun saveCompanyLogoUri(uri: String) {
+        val clean = uri.trim()
+        businessPrefs.edit().putString("companyLogoUri", clean).apply()
+        companyLogoUri.value = clean
+        viewModelScope.launch { _userMessage.emit(if (clean.isBlank()) "Logo perusahaan dihapus" else "Logo perusahaan tersimpan") }
+    }
+
     fun saveCloudSettings(urlInput: String, apiKeyInput: String, autoSync: Boolean) {
         if (!persistCloudSettings(urlInput, apiKeyInput, autoSync)) return
         viewModelScope.launch { _userMessage.emit("Pengaturan cloud tersimpan") }
@@ -280,9 +340,97 @@ class AyamKasViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun openForm(tx: AyamTransaction? = null, kind: String? = null) {
+        if ((tx == null && kind == "purchase") || tx?.type == "purchase") {
+            openPurchaseDoScreen(tx)
+            return
+        }
         editingTransaction.value = tx
         presetType.value = kind
         isFormOpen.value = true
+    }
+
+    fun openPurchaseDoScreen(transaction: AyamTransaction? = null) {
+        isFormOpen.value = false
+        editingTransaction.value = null
+        presetType.value = null
+        purchaseDoEditingTransaction.value = transaction
+        isPurchaseDoScreenOpen.value = true
+    }
+
+    fun closePurchaseDoScreen() {
+        isPurchaseDoScreenOpen.value = false
+        purchaseDoEditingTransaction.value = null
+    }
+
+    fun savePurchaseDo(
+        date: String,
+        doNumber: String,
+        quantityKg: Double,
+        supplier: String,
+        totalPrice: Double,
+        paidNow: Double,
+        paymentMethod: String,
+        cashAccount: String,
+        weightLossKg: Double,
+        mortalityRatePct: Double,
+        fcr: Double?,
+        weightGainKg: Double?,
+        feedPricePerKg: Double?,
+        processingCost: Double,
+        notes: String,
+        confirmed: Boolean,
+        editingId: String? = null
+    ) {
+        val invalid = when {
+            date.isBlank() -> "Tanggal pembelian wajib diisi"
+            doNumber.isBlank() -> "Nomor DO wajib diisi"
+            supplier.isBlank() -> "Nama supplier wajib diisi"
+            quantityKg <= 0.0 -> "Berat pembelian harus lebih dari nol"
+            totalPrice <= 0.0 -> "Harga total DO harus lebih dari nol"
+            paidNow < 0.0 || paidNow > totalPrice -> "Pembayaran harus antara Rp0 dan total DO"
+            weightLossKg < 0.0 -> "Penyusutan tidak boleh negatif"
+            mortalityRatePct !in 0.0..100.0 -> "Persentase kematian harus 0–100%"
+            processingCost < 0.0 -> "Biaya pemotongan tidak boleh negatif"
+            fcr != null && fcr < 0.0 -> "FCR tidak boleh negatif"
+            weightGainKg != null && weightGainKg < 0.0 -> "Pertambahan berat tidak boleh negatif"
+            feedPricePerKg != null && feedPricePerKg < 0.0 -> "Harga pakan tidak boleh negatif"
+            (fcr == null) != (weightGainKg == null) || (fcr == null) != (feedPricePerKg == null) ->
+                "Isi FCR, pertambahan berat, dan harga pakan bersamaan atau kosongkan semuanya"
+            weightLossKg > quantityKg -> "Penyusutan tidak boleh melebihi kg pembelian"
+            else -> null
+        }
+        if (invalid != null) {
+            viewModelScope.launch { _userMessage.emit(invalid) }
+            return
+        }
+        if (allTransactions.value.any { it.id != editingId && it.type == "purchase" && it.ref.trim().equals(doNumber.trim(), ignoreCase = true) }) {
+            viewModelScope.launch { _userMessage.emit("Nomor DO sudah digunakan. Gunakan referensi unik untuk setiap pengiriman fisik.") }
+            return
+        }
+        saveTransaction(
+            id = editingId,
+            date = date,
+            ref = doNumber,
+            type = "purchase",
+            category = "Ayam / DO",
+            description = "Pembelian DO $doNumber · $supplier",
+            amount = totalPrice,
+            paidAmount = paidNow,
+            qtyKg = quantityKg,
+            batchRef = "",
+            notes = notes,
+            isConfirmed = confirmed,
+            paymentMethod = paymentMethod,
+            cashAccount = cashAccount,
+            supplier = supplier,
+            weightLossKg = weightLossKg,
+            mortalityRatePct = mortalityRatePct,
+            fcr = fcr,
+            weightGainKg = weightGainKg,
+            feedPricePerKg = feedPricePerKg,
+            processingCost = processingCost
+        )
+        isPurchaseDoScreenOpen.value = false
     }
 
     fun closeForm() {
@@ -303,10 +451,59 @@ class AyamKasViewModel(application: Application) : AndroidViewModel(application)
         qtyKg: Double?,
         batchRef: String,
         notes: String,
-        isConfirmed: Boolean
+        isConfirmed: Boolean,
+        paymentMethod: String = "CASH",
+        cashAccount: String = "DOMPET",
+        supplier: String = "",
+        weightLossKg: Double? = null,
+        mortalityRatePct: Double? = null,
+        fcr: Double? = null,
+        weightGainKg: Double? = null,
+        feedPricePerKg: Double? = null,
+        processingCost: Double = 0.0
     ) {
+        val existingBeforeSave = id?.let { key -> allTransactions.value.firstOrNull { it.id == key } }
+        if (date.length != 10 || date[4] != '-' || date[7] != '-') {
+            viewModelScope.launch { _userMessage.emit("Tanggal transaksi harus berformat YYYY-MM-DD") }
+            return
+        }
+        if (amount <= 0.0) {
+            viewModelScope.launch { _userMessage.emit("Nominal transaksi harus lebih dari nol") }
+            return
+        }
+        if (type in listOf("sale", "purchase", "expense") &&
+            (paidAmount == null || paidAmount < 0.0 || paidAmount > amount)) {
+            viewModelScope.launch { _userMessage.emit("Pembayaran harus diisi di antara Rp0 dan nominal transaksi") }
+            return
+        }
+        if (type == "sale" && isConfirmed) {
+            val quantity = qtyKg ?: 0.0
+            if (quantity <= 0.0 || batchRef.isBlank()) {
+                viewModelScope.launch { _userMessage.emit("Penjualan terverifikasi wajib memiliki kg terjual dan tautan DO sumber") }
+                return
+            }
+            val transactionsWithoutEditedSale = allTransactions.value.filterNot { it.id == existingBeforeSave?.id }
+            val sourcePurchase = transactionsWithoutEditedSale.firstOrNull {
+                it.type == "purchase" && it.isConfirmed && it.ref.trim().equals(batchRef.trim(), ignoreCase = true)
+            }
+            if (sourcePurchase == null) {
+                viewModelScope.launch { _userMessage.emit("DO sumber belum ada atau belum terverifikasi; penjualan tidak disimpan sebagai transaksi terverifikasi") }
+                return
+            }
+            if (date < sourcePurchase.date) {
+                viewModelScope.launch { _userMessage.emit("Tanggal penjualan tidak boleh sebelum tanggal pembelian DO sumber") }
+                return
+            }
+            val stock = AyamKasCalculator.calculateStockRows(transactionsWithoutEditedSale)
+                .firstOrNull { it.purchaseTx.ref.trim().equals(batchRef.trim(), ignoreCase = true) }
+            val available = stock?.remainingKg ?: 0.0
+            if (quantity > available + 0.0001) {
+                viewModelScope.launch { _userMessage.emit("Stok DO ${batchRef.trim()} tidak cukup: tersedia ${AyamKasFormatters.formatNumber(available)} kg") }
+                return
+            }
+        }
         viewModelScope.launch {
-            val txId = id?.ifBlank { null } ?: "TX-${System.currentTimeMillis()}"
+            val txId = id?.ifBlank { null } ?: "TX-${java.util.UUID.randomUUID()}"
             val existing = allTransactions.value.firstOrNull { it.id == txId }
             val tx = AyamTransaction(
                 id = txId,
@@ -321,7 +518,16 @@ class AyamKasViewModel(application: Application) : AndroidViewModel(application)
                 batchRef = batchRef.trim(),
                 notes = notes.trim(),
                 status = if (isConfirmed) "confirmed" else "draft",
-                source = existing?.source ?: "manual"
+                source = existing?.source ?: "manual",
+                paymentMethod = paymentMethod,
+                cashAccount = cashAccount,
+                supplier = supplier.trim(),
+                weightLossKg = weightLossKg,
+                mortalityRatePct = mortalityRatePct,
+                fcr = fcr,
+                weightGainKg = weightGainKg,
+                feedPricePerKg = feedPricePerKg,
+                processingCost = processingCost
             )
             repository.saveTransaction(tx)
             scheduleAutoSync()
@@ -333,32 +539,42 @@ class AyamKasViewModel(application: Application) : AndroidViewModel(application)
     fun toggleConfirm(tx: AyamTransaction) {
         viewModelScope.launch {
             if (tx.isConfirmed) {
-                repository.toggleConfirm(tx.id, tx.status)
-                scheduleAutoSync()
-                _userMessage.emit("Transaksi kembali menjadi Draf")
-            } else {
-                if (tx.paidAmount == null) {
-                    _userMessage.emit("Isi nominal pembayaran terlebih dahulu untuk memverifikasi")
-                    openForm(tx)
-                    return@launch
-                }
-                repository.toggleConfirm(tx.id, tx.status)
-                scheduleAutoSync()
-                _userMessage.emit("Transaksi terverifikasi dan masuk ke laporan")
+                runCatching { repository.toggleConfirm(tx.id, tx.status) }
+                    .onSuccess {
+                        scheduleAutoSync()
+                        _userMessage.emit("Transaksi kembali menjadi Draf")
+                    }
+                    .onFailure { _userMessage.emit(it.message ?: "Status transaksi gagal diubah") }
+                return@launch
             }
+            if (tx.paidAmount == null && tx.type in listOf("sale", "purchase", "expense")) {
+                _userMessage.emit("Isi jumlah yang benar-benar dibayar/diterima. Gunakan Rp0 untuk kredit, bukan membiarkannya kosong.")
+                openForm(tx)
+                return@launch
+            }
+            runCatching { repository.confirmTransaction(tx.id) }
+                .onSuccess {
+                    scheduleAutoSync()
+                    _userMessage.emit("Transaksi lolos validasi dan masuk ke laporan")
+                }
+                .onFailure { _userMessage.emit("Belum dapat diverifikasi: ${it.message ?: "periksa data transaksi"}") }
         }
     }
 
     fun confirmAllDrafts() {
         viewModelScope.launch {
             val drafts = allTransactions.value.filter { it.isDraft }
-            drafts.forEach { t ->
-                // Ensure paidAmount is filled if null
-                val updated = if (t.paidAmount == null) t.copy(paidAmount = t.amount, status = "confirmed") else t.copy(status = "confirmed")
-                repository.saveTransaction(updated)
+            var confirmed = 0
+            var skipped = 0
+            drafts.forEach { tx ->
+                // Confirmation validates each record independently. It never fills missing
+                // payments with the transaction amount and never bypasses DO/HPP checks.
+                runCatching { repository.confirmTransaction(tx.id) }
+                    .onSuccess { confirmed++ }
+                    .onFailure { skipped++ }
             }
-            scheduleAutoSync()
-            _userMessage.emit("${drafts.size} catatan berhasil diverifikasi")
+            if (confirmed > 0) scheduleAutoSync()
+            _userMessage.emit("Verifikasi massal: $confirmed berhasil, $skipped dilewati karena data belum lengkap. Buka dan perbaiki tiap transaksi yang tertunda.")
         }
     }
 
@@ -386,19 +602,86 @@ class AyamKasViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    fun restoreDefaultData() {
+    }
+
+    fun saveCashFlow(flow: com.example.data.model.CashFlow) {
         viewModelScope.launch {
-            repository.restoreDefaultData()
-            scheduleAutoSync()
-            _userMessage.emit("Data operasional riil berhasil dimuat ulang")
+            runCatching { repository.saveCashFlow(flow) }
+                .onSuccess {
+                    scheduleAutoSync()
+                    _userMessage.emit("Transfer antar rekening tersimpan")
+                }
+                .onFailure { _userMessage.emit(it.message ?: "Transfer gagal disimpan") }
         }
     }
 
-    fun exportJson(context: Context): Uri? {
-        val jsonStr = repository.generateJsonExport(allTransactions.value)
-        val today = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())
-        val fileName = "ayamkaspro-cadangan-$today.json"
-        return saveAndShareFile(context, fileName, jsonStr, "application/json")
+    fun saveExternalLoan(loan: com.example.data.model.ExternalLoan) {
+        viewModelScope.launch {
+            runCatching { repository.saveExternalLoan(loan) }
+                .onSuccess {
+                    scheduleAutoSync()
+                    _userMessage.emit("Catatan pinjaman tersimpan terpisah dari laba usaha")
+                }
+                .onFailure { _userMessage.emit(it.message ?: "Pinjaman gagal disimpan") }
+        }
+    }
+
+    fun saveEmployee(employee: com.example.data.model.EmployeeRecord) {
+        viewModelScope.launch {
+            runCatching { repository.saveEmployee(employee) }
+                .onSuccess {
+                    scheduleAutoSync()
+                    _userMessage.emit("Data karyawan tersimpan")
+                }
+                .onFailure { _userMessage.emit(it.message ?: "Karyawan gagal disimpan") }
+        }
+    }
+
+    fun saveAttendance(record: com.example.data.model.AttendanceRecord) {
+        viewModelScope.launch {
+            runCatching { repository.saveAttendance(record) }
+                .onSuccess {
+                    scheduleAutoSync()
+                    _userMessage.emit("Absensi tersimpan")
+                }
+                .onFailure { _userMessage.emit(it.message ?: "Absensi gagal disimpan") }
+        }
+    }
+
+    fun savePayroll(record: com.example.data.model.PayrollRecord) {
+        viewModelScope.launch {
+            runCatching { repository.savePayroll(record) }
+                .onSuccess {
+                    scheduleAutoSync()
+                    _userMessage.emit("Rekap payroll tersimpan dan biaya gaji diposting ke buku usaha")
+                }
+                .onFailure { _userMessage.emit(it.message ?: "Payroll gagal disimpan") }
+        }
+    }
+
+    fun exportJson(context: Context) {
+        viewModelScope.launch {
+            runCatching {
+                val jsonStr = repository.generateJsonExport(
+                    transactions = allTransactions.value,
+                    deletedTransactions = repository.allDeleted.first(),
+                    cashTransactions = repository.cashTransactions.first(),
+                    cashFlows = repository.cashFlows.first(),
+                    externalLoans = repository.externalLoans.first(),
+                    employees = repository.employees.first(),
+                    attendance = repository.attendance.first(),
+                    payroll = repository.payroll.first()
+                )
+                val today = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())
+                val fileName = "ayamkaspro-cadangan-lengkap-$today.json"
+                saveAndShareFile(context, fileName, jsonStr, "application/json")
+                    ?: throw IllegalStateException("File cadangan tidak berhasil dibuat atau dibagikan")
+            }.onSuccess {
+                _userMessage.emit("Cadangan lokal lengkap dibuat. Simpan file JSON di lokasi aman.")
+            }.onFailure {
+                _userMessage.emit("Gagal membuat cadangan lengkap: ${it.message ?: "kesalahan tak diketahui"}")
+            }
+        }
     }
 
     fun exportCsv(context: Context): Uri? {
@@ -412,9 +695,10 @@ class AyamKasViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch {
             val result = repository.importJsonData(jsonContent)
             if (result.isSuccess) {
-                _userMessage.emit("Berhasil memulihkan ${result.getOrNull()} transaksi")
+                scheduleAutoSync()
+                _userMessage.emit("Berhasil memulihkan ${result.getOrNull()} transaksi dan data cadangan yang disertakan")
             } else {
-                _userMessage.emit("Gagal memulihkan: file tidak sesuai format")
+                _userMessage.emit("Gagal memulihkan: ${result.exceptionOrNull()?.message ?: "file tidak sesuai format"}")
             }
         }
     }

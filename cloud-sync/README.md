@@ -37,7 +37,7 @@ The endpoint's \`doGet\` response is a JSON health check. \`doPost\` accepts \`p
 
 - The current HPP formula assumes purchased kg and sold kg use the **same weight basis**. If the DO weight is live weight and sales are dressed/carcass weight, the business must record output/saleable kg per DO (and processing cost, weight loss, and by-products) before profit can be called final. No standard yield percentage is filled automatically because it must come from measured business data.
 - Receivables and supplier payables currently show aggregate estimates. To reconcile each customer/supplier invoice exactly, collections and payments need a required invoice/source reference. Do not treat aggregate estimates as an invoice aging report.
-- Attendance/payroll is not yet part of this native Android sync bridge. Record actual wages as operating-cost transactions until an attendance/payroll module is linked into the same ledger; the standalone web integration in the other branch is not automatically synced to Android.
+- Android sync includes cash accounts, inter-account transfers, loan records, employees, attendance and payroll in their own spreadsheet tabs. Test every table on a blank spreadsheet before use; payroll confirmation posts its approved total as a salary expense, with the paid amount controlling the cash movement.
 - Auto-sync runs after local edits and when the app opens **while the app is active and online**. It is not a promise of 24-hour background sync while Android force-stops the app.
 - The key is stored in app preferences so it does not need to be hard-coded in the APK. Anyone who obtains both the URL and key may be able to write to this spreadsheet. Do not share the key; use proper Google OAuth for multi-user/public deployments.
 - Timestamp-based conflict resolution is intentionally simple (newer \`updatedAt\` wins); it depends on correctly set device clocks. Review the last-sync status and spreadsheet audit log after use.
@@ -68,7 +68,7 @@ Editing cells in the managed \`Transaksi\` sheet is also supported. The bound Ap
 
 ## Important scope boundary
 
-This deployment connects **transaction ledger data** between Android and Sheets; it does not magically synchronize every sheet or every app module. Staff attendance/payroll, invoice-level receivable/payable, measured output yield and by-products must be implemented and linked to the same ledger before those reports can be considered complete. For this reason the current system must label profit as preliminary whenever cost/yield/payment validation remains unresolved.
+This deployment synchronizes **transaction and auxiliary ledger data** between Android and Sheets. Invoice-level receivable/payable aging still requires each collection/payment to carry a required source invoice or DO reference. The current batch model treats mortality as a percentage of input weight and must use the same weight basis for purchases and sales; if purchases are live-weight and sales are carcass-weight, measured saleable carcass output and co-product/by-product allocations must be added before HPP is considered final. For this reason the current system must label profit as preliminary whenever cost/yield/payment validation remains unresolved.
 
 ## Validation checklist before real use
 

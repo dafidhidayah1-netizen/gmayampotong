@@ -74,7 +74,9 @@ fun TransactionFormDialog(
         qtyKg: Double?,
         batchRef: String,
         notes: String,
-        isConfirmed: Boolean
+        isConfirmed: Boolean,
+        paymentMethod: String,
+        cashAccount: String
     ) -> Unit
 ) {
     val defaultDate = remember {
@@ -100,10 +102,14 @@ fun TransactionFormDialog(
     var batchRef by remember { mutableStateOf(transaction?.batchRef ?: "") }
     var notes by remember { mutableStateOf(transaction?.notes ?: "") }
     var isConfirmed by remember { mutableStateOf(transaction?.isConfirmed ?: true) }
+    var paymentMethod by remember { mutableStateOf(transaction?.paymentMethod ?: "CASH") }
+    var cashAccount by remember { mutableStateOf(transaction?.cashAccount ?: "DOMPET") }
 
     var typeMenuExpanded by remember { mutableStateOf(false) }
     var categoryMenuExpanded by remember { mutableStateOf(false) }
     var batchMenuExpanded by remember { mutableStateOf(false) }
+    var paymentMenuExpanded by remember { mutableStateOf(false) }
+    var accountMenuExpanded by remember { mutableStateOf(false) }
 
     var errorMessage by remember { mutableStateOf<String?>(null) }
 
@@ -216,12 +222,16 @@ fun TransactionFormDialog(
                             DropdownMenuItem(
                                 text = { Text("${t.icon} ${t.label}") },
                                 onClick = {
-                                    type = t.key
-                                    typeMenuExpanded = false
-                                    if (t.key == "purchase") category = "Ayam / DO"
-                                    if (t.key == "sale") category = "Penjualan"
-                                    if (t.key == "expense") category = "Admin"
-                                    if (t.key == "capital_in") category = "Modal owner"
+                                    if (t.key == "purchase" && transaction == null) {
+                                        errorMessage = "Untuk DO baru gunakan tombol DO Baru agar supplier, susut, kematian, dan HPP batch tercatat lengkap."
+                                    } else {
+                                        type = t.key
+                                        typeMenuExpanded = false
+                                        if (t.key == "purchase") category = "Ayam / DO"
+                                        if (t.key == "sale") category = "Penjualan"
+                                        if (t.key == "expense") category = "Admin"
+                                        if (t.key == "capital_in") category = "Modal owner"
+                                    }
                                 }
                             )
                         }
@@ -328,6 +338,64 @@ fun TransactionFormDialog(
                         .testTag("input_tx_paid_amount"),
                     singleLine = true
                 )
+
+                // Actual payment channel/account for cash-book reconciliation.
+                if (!isCashOnly) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Metode Pembayaran", style = MaterialTheme.typography.labelMedium)
+                            ExposedDropdownMenuBox(
+                                expanded = paymentMenuExpanded,
+                                onExpandedChange = { paymentMenuExpanded = it }
+                            ) {
+                                OutlinedTextField(
+                                    value = paymentMethod,
+                                    onValueChange = {},
+                                    readOnly = true,
+                                    label = { Text("Metode") },
+                                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = paymentMenuExpanded) },
+                                    modifier = Modifier.fillMaxWidth().menuAnchor().testTag("dropdown_payment_method")
+                                )
+                                ExposedDropdownMenu(expanded = paymentMenuExpanded, onDismissRequest = { paymentMenuExpanded = false }) {
+                                    listOf("CASH", "TRANSFER", "QRIS").forEach { option ->
+                                        DropdownMenuItem(text = { Text(option) }, onClick = {
+                                            paymentMethod = option
+                                            paymentMenuExpanded = false
+                                            if (option == "QRIS") cashAccount = "QRIS"
+                                            if (option == "TRANSFER") cashAccount = "ATM/BANK"
+                                            if (option == "CASH") cashAccount = "DOMPET"
+                                        })
+                                    }
+                                }
+                            }
+                        }
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Akun Kas", style = MaterialTheme.typography.labelMedium)
+                            ExposedDropdownMenuBox(
+                                expanded = accountMenuExpanded,
+                                onExpandedChange = { accountMenuExpanded = it }
+                            ) {
+                                OutlinedTextField(
+                                    value = cashAccount,
+                                    onValueChange = {},
+                                    readOnly = true,
+                                    label = { Text("Sumber/Tujuan") },
+                                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = accountMenuExpanded) },
+                                    modifier = Modifier.fillMaxWidth().menuAnchor().testTag("dropdown_cash_account")
+                                )
+                                ExposedDropdownMenu(expanded = accountMenuExpanded, onDismissRequest = { accountMenuExpanded = false }) {
+                                    listOf("DOMPET", "ATM/BANK", "QRIS").forEach { option ->
+                                        DropdownMenuItem(text = { Text(option) }, onClick = {
+                                            cashAccount = option
+                                            accountMenuExpanded = false
+                                        })
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(12.dp))
+                }
 
                 // Berat (Kg)
                 if (showQty) {
@@ -493,7 +561,9 @@ fun TransactionFormDialog(
                                 qty,
                                 batchRef,
                                 notes,
-                                isConfirmed
+                                isConfirmed,
+                                paymentMethod,
+                                cashAccount
                             )
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF176B50)),

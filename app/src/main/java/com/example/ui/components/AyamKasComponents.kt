@@ -378,7 +378,7 @@ fun DoStockCard(
 ) {
     val p = item.purchaseTx
     val isNegative = item.remainingKg < -0.0001
-    val isMissing = item.missingSalesCount > 0
+    val isMissing = item.missingSalesCount > 0 || item.status.contains("Belum Lengkap", ignoreCase = true)
 
     Card(
         modifier = modifier
@@ -492,7 +492,7 @@ fun DoStockCard(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column {
-                    Text(text = "Harga Pokok DO / kg", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(text = "HPP Batch / kg layak jual", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Text(
                         text = "${AyamKasFormatters.formatRupiah(item.unitCost)} / kg",
                         style = MaterialTheme.typography.bodyMedium,
@@ -513,7 +513,7 @@ fun DoStockCard(
             if (isMissing) {
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "⚠️ Ada ${item.missingSalesCount} transaksi penjualan yang kg-nya belum diisi pada DO ini.",
+                    text = if (item.missingSalesCount > 0) "⚠️ Ada ${item.missingSalesCount} transaksi penjualan yang kg-nya belum diisi pada DO ini." else "⚠️ Lengkapi data batch/biaya produksi sebelum menganggap HPP dan laba final.",
                     style = MaterialTheme.typography.labelSmall,
                     color = Color(0xFF8B5A0A)
                 )

@@ -1,9 +1,13 @@
 package com.example
 
 import android.os.Bundle
+import android.content.Intent
+import android.net.Uri
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.compose.animation.AnimatedVisibility
@@ -23,13 +27,20 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AccountBalance
+import androidx.compose.material.icons.filled.Groups
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Assessment
 import androidx.compose.material.icons.filled.Backup
+import androidx.compose.material.icons.filled.Business
 import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.ReceiptLong
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -48,17 +59,24 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
 import com.example.ui.screens.DashboardScreen
+import com.example.ui.screens.FinanceScreen
+import com.example.ui.screens.WorkforceScreen
+import com.example.ui.screens.BusinessSettingsScreen
 import com.example.ui.screens.ReportsScreen
+import com.example.ui.screens.PurchaseDoScreen
 import com.example.ui.screens.StockScreen
 import com.example.ui.screens.ToolsBackupScreen
 import com.example.ui.screens.TransactionFormDialog
@@ -71,7 +89,10 @@ enum class AyamNavTab(val title: String, val icon: ImageVector) {
     TRANSAKSI("Transaksi", Icons.Default.ReceiptLong),
     STOCK("DO & Stok", Icons.Default.Inventory2),
     REPORTS("Laporan", Icons.Default.Assessment),
-    TOOLS("Cadangan", Icons.Default.Backup)
+    TOOLS("Cadangan", Icons.Default.Backup),
+    FINANCE("Kas & Pinjaman", Icons.Default.AccountBalance),
+    WORKFORCE("Karyawan", Icons.Default.Groups),
+    SETTINGS("Pengaturan", Icons.Default.Settings)
 }
 
 class MainActivity : ComponentActivity() {
@@ -83,7 +104,13 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
 
         setContent {
-            MyApplicationTheme {
+            val themeMode by viewModel.themeMode.collectAsState()
+            val darkTheme = when (themeMode.uppercase()) {
+                "DARK" -> true
+                "LIGHT" -> false
+                else -> isSystemInDarkTheme()
+            }
+            MyApplicationTheme(darkTheme = darkTheme) {
                 AyamKasApp(viewModel = viewModel)
             }
         }
@@ -93,6 +120,23 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun AyamKasApp(viewModel: AyamKasViewModel) {
     val context = LocalContext.current
+    val companyName by viewModel.companyName.collectAsState()
+    val companyLogoUri by viewModel.companyLogoUri.collectAsState()
+    val cashAccountBalances by viewModel.cashAccountBalances.collectAsState()
+    val cashFlows by viewModel.cashFlows.collectAsState(emptyList())
+    val externalLoans by viewModel.externalLoans.collectAsState(emptyList())
+    val employees by viewModel.employees.collectAsState(emptyList())
+    val attendance by viewModel.attendance.collectAsState(emptyList())
+    val payroll by viewModel.payroll.collectAsState(emptyList())
+    var showMoreMenu by remember { mutableStateOf(false) }
+    val logoPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            runCatching {
+                context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            viewModel.saveCompanyLogoUri(uri.toString())
+        }
+    }
     val snackbarHostState = remember { SnackbarHostState() }
 
     var currentTab by remember { mutableStateOf(AyamNavTab.DASHBOARD) }
@@ -120,6 +164,8 @@ fun AyamKasApp(viewModel: AyamKasViewModel) {
     val reportBreakdown by viewModel.reportBreakdown.collectAsState()
 
     val isFormOpen by viewModel.isFormOpen.collectAsState()
+    val isPurchaseDoScreenOpen by viewModel.isPurchaseDoScreenOpen.collectAsState()
+    val purchaseDoEditingTransaction by viewModel.purchaseDoEditingTransaction.collectAsState()
     val editingTransaction by viewModel.editingTransaction.collectAsState()
     val presetType by viewModel.presetType.collectAsState()
 
@@ -131,11 +177,11 @@ fun AyamKasApp(viewModel: AyamKasViewModel) {
     }
 
     // Back handling
-    BackHandler(enabled = isFormOpen || currentTab != AyamNavTab.DASHBOARD) {
-        if (isFormOpen) {
-            viewModel.closeForm()
-        } else if (currentTab != AyamNavTab.DASHBOARD) {
-            currentTab = AyamNavTab.DASHBOARD
+    BackHandler(enabled = isFormOpen || isPurchaseDoScreenOpen || currentTab != AyamNavTab.DASHBOARD) {
+        when {
+            isPurchaseDoScreenOpen -> viewModel.closePurchaseDoScreen()
+            isFormOpen -> viewModel.closeForm()
+            currentTab != AyamNavTab.DASHBOARD -> currentTab = AyamNavTab.DASHBOARD
         }
     }
 
@@ -162,19 +208,28 @@ fun AyamKasApp(viewModel: AyamKasViewModel) {
                             modifier = Modifier.size(36.dp)
                         ) {
                             Box(contentAlignment = Alignment.Center) {
-                                Text(text = "🐓", fontSize = 20.sp)
+                                if (companyLogoUri.isNotBlank()) {
+                                    AsyncImage(
+                                        model = Uri.parse(companyLogoUri),
+                                        contentDescription = "Logo perusahaan",
+                                        modifier = Modifier.size(32.dp),
+                                        contentScale = ContentScale.Fit
+                                    )
+                                } else {
+                                    Icon(imageVector = Icons.Default.Business, contentDescription = "Identitas perusahaan", tint = Color(0xFF123D32), modifier = Modifier.size(22.dp))
+                                }
                             }
                         }
                         Spacer(modifier = Modifier.width(10.dp))
                         Column {
                             Text(
-                                text = "AyamKas Pro",
+                                text = companyName,
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.ExtraBold,
                                 color = Color(0xFFF8FFFB)
                             )
                             Text(
-                                text = "GM Ayam Potong · Offline",
+                                text = "AyamKas Pro · Buku usaha",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = Color(0xFFB7D2C7)
                             )
@@ -202,6 +257,14 @@ fun AyamKasApp(viewModel: AyamKasViewModel) {
                                 tint = Color.White
                             )
                         }
+                        IconButton(onClick = { showMoreMenu = true }, modifier = Modifier.testTag("btn_top_business_menu")) {
+                            Icon(Icons.Default.MoreVert, contentDescription = "Menu usaha", tint = Color.White)
+                        }
+                        DropdownMenu(expanded = showMoreMenu, onDismissRequest = { showMoreMenu = false }) {
+                            DropdownMenuItem(text = { Text("Kas & Pinjaman") }, onClick = { currentTab = AyamNavTab.FINANCE; showMoreMenu = false })
+                            DropdownMenuItem(text = { Text("Karyawan & Payroll") }, onClick = { currentTab = AyamNavTab.WORKFORCE; showMoreMenu = false })
+                            DropdownMenuItem(text = { Text("Pengaturan Perusahaan") }, onClick = { currentTab = AyamNavTab.SETTINGS; showMoreMenu = false })
+                        }
                     }
                 }
             }
@@ -212,7 +275,7 @@ fun AyamKasApp(viewModel: AyamKasViewModel) {
                 tonalElevation = 8.dp,
                 modifier = Modifier.testTag("bottom_nav_bar")
             ) {
-                AyamNavTab.entries.forEach { tab ->
+                listOf(AyamNavTab.DASHBOARD, AyamNavTab.TRANSAKSI, AyamNavTab.STOCK, AyamNavTab.REPORTS, AyamNavTab.TOOLS).forEach { tab ->
                     NavigationBarItem(
                         selected = currentTab == tab,
                         onClick = { currentTab = tab },
@@ -230,7 +293,7 @@ fun AyamKasApp(viewModel: AyamKasViewModel) {
         },
         floatingActionButton = {
             AnimatedVisibility(
-                visible = currentTab == AyamNavTab.DASHBOARD || currentTab == AyamNavTab.TRANSAKSI || currentTab == AyamNavTab.STOCK
+                visible = !isPurchaseDoScreenOpen && (currentTab == AyamNavTab.DASHBOARD || currentTab == AyamNavTab.TRANSAKSI || currentTab == AyamNavTab.STOCK)
             ) {
                 FloatingActionButton(
                     onClick = {
@@ -254,9 +317,37 @@ fun AyamKasApp(viewModel: AyamKasViewModel) {
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
-            when (currentTab) {
+            if (isPurchaseDoScreenOpen) {
+                PurchaseDoScreen(
+                    initialTransaction = purchaseDoEditingTransaction,
+                    onCancel = { viewModel.closePurchaseDoScreen() },
+                    onSave = { date, doNumber, quantityKg, supplier, totalPrice, paidNow, paymentMethod, cashAccount,
+                               weightLossKg, mortalityRatePct, fcr, weightGainKg, feedPricePerKg, processingCost, notes, confirmed, editingId ->
+                        viewModel.savePurchaseDo(
+                            date = date,
+                            doNumber = doNumber,
+                            quantityKg = quantityKg,
+                            supplier = supplier,
+                            totalPrice = totalPrice,
+                            paidNow = paidNow,
+                            paymentMethod = paymentMethod,
+                            cashAccount = cashAccount,
+                            weightLossKg = weightLossKg,
+                            mortalityRatePct = mortalityRatePct,
+                            fcr = fcr,
+                            weightGainKg = weightGainKg,
+                            feedPricePerKg = feedPricePerKg,
+                            processingCost = processingCost,
+                            notes = notes,
+                            confirmed = confirmed,
+                            editingId = editingId
+                        )
+                    }
+                )
+            } else when (currentTab) {
                 AyamNavTab.DASHBOARD -> DashboardScreen(
                     summary = summary,
+                    cashAccountBalances = cashAccountBalances,
                     recentConfirmed = allTransactions.filter { it.isConfirmed },
                     onNavigateToTransactions = { currentTab = AyamNavTab.TRANSAKSI },
                     onNavigateToStock = { currentTab = AyamNavTab.STOCK },
@@ -304,12 +395,37 @@ fun AyamKasApp(viewModel: AyamKasViewModel) {
                     onExportCsv = { viewModel.exportCsv(context) }
                 )
 
+                AyamNavTab.FINANCE -> FinanceScreen(
+                    cashBalances = cashAccountBalances,
+                    cashFlows = cashFlows,
+                    loans = externalLoans,
+                    onSaveCashFlow = { viewModel.saveCashFlow(it) },
+                    onSaveLoan = { viewModel.saveExternalLoan(it) }
+                )
+
+                AyamNavTab.WORKFORCE -> WorkforceScreen(
+                    employees = employees,
+                    attendance = attendance,
+                    payroll = payroll,
+                    onSaveEmployee = { viewModel.saveEmployee(it) },
+                    onSaveAttendance = { viewModel.saveAttendance(it) },
+                    onSavePayroll = { viewModel.savePayroll(it) }
+                )
+
+                AyamNavTab.SETTINGS -> BusinessSettingsScreen(
+                    companyName = companyName,
+                    companyLogoUri = companyLogoUri,
+                    themeMode = viewModel.themeMode.value,
+                    onSave = { name, mode -> viewModel.saveBusinessSettings(name, mode) },
+                    onChooseLogo = { logoPicker.launch(arrayOf("image/*")) },
+                    onRemoveLogo = { viewModel.saveCompanyLogoUri("") }
+                )
+
                 AyamNavTab.TOOLS -> ToolsBackupScreen(
                     onExportJson = { viewModel.exportJson(context) },
                     onExportCsv = { viewModel.exportCsv(context) },
                     onImportJson = { viewModel.importJson(it) },
                     onResetData = { viewModel.resetAllData() },
-                    onRestoreDefaultDrafts = { viewModel.restoreDefaultData() },
                     onShareWhatsApp = { viewModel.shareSummaryViaWhatsApp(context) },
                     cloudUrl = cloudUrl,
                     cloudApiKey = cloudApiKey,
@@ -335,7 +451,7 @@ fun AyamKasApp(viewModel: AyamKasViewModel) {
             presetType = presetType,
             availablePurchaseBatches = confirmedPurchases,
             onDismiss = { viewModel.closeForm() },
-            onSave = { id, date, ref, type, category, description, amount, paidAmount, qtyKg, batchRef, notes, isConfirmed ->
+            onSave = { id, date, ref, type, category, description, amount, paidAmount, qtyKg, batchRef, notes, isConfirmed, paymentMethod, cashAccount ->
                 viewModel.saveTransaction(
                     id = id,
                     date = date,
@@ -348,7 +464,16 @@ fun AyamKasApp(viewModel: AyamKasViewModel) {
                     qtyKg = qtyKg,
                     batchRef = batchRef,
                     notes = notes,
-                    isConfirmed = isConfirmed
+                    isConfirmed = isConfirmed,
+                    paymentMethod = paymentMethod,
+                    cashAccount = cashAccount,
+                    supplier = editingTransaction?.supplier.orEmpty(),
+                    weightLossKg = editingTransaction?.weightLossKg,
+                    mortalityRatePct = editingTransaction?.mortalityRatePct,
+                    fcr = editingTransaction?.fcr,
+                    weightGainKg = editingTransaction?.weightGainKg,
+                    feedPricePerKg = editingTransaction?.feedPricePerKg,
+                    processingCost = editingTransaction?.processingCost ?: 0.0
                 )
             }
         )

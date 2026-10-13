@@ -60,7 +60,6 @@ fun ToolsBackupScreen(
     onExportCsv: () -> Unit,
     onImportJson: (String) -> Unit,
     onResetData: () -> Unit,
-    onRestoreDefaultDrafts: () -> Unit,
     onShareWhatsApp: () -> Unit,
     cloudUrl: String,
     cloudApiKey: String,
@@ -86,27 +85,31 @@ fun ToolsBackupScreen(
     var importJsonText by remember { mutableStateOf("") }
 
     var showResetDialog by remember { mutableStateOf(false) }
-    var showRestoreDefaultDialog by remember { mutableStateOf(false) }
 
-    // State for Chicken Slaughter Calculator
-    var liveWeightKg by remember { mutableStateOf("2.0") }
-    var livePricePerKg by remember { mutableStateOf("23000") }
-    var carcassYieldPercent by remember { mutableStateOf("72") }
-    var operatingCostPerKg by remember { mutableStateOf("1500") }
-    var targetMarginPerKg by remember { mutableStateOf("3000") }
+    // Use only values entered by the user; never show default/sample prices as business results.
+    var liveWeightKg by remember { mutableStateOf("") }
+    var livePricePerKg by remember { mutableStateOf("") }
+    var carcassYieldPercent by remember { mutableStateOf("") }
+    var operatingCostPerKg by remember { mutableStateOf("") }
+    var targetMarginPerKg by remember { mutableStateOf("") }
 
-    // Computations for Poultry Calculator
-    val liveWeight = liveWeightKg.toDoubleOrNull() ?: 2.0
-    val livePrice = livePricePerKg.toDoubleOrNull() ?: 23000.0
-    val yieldPct = (carcassYieldPercent.toDoubleOrNull() ?: 72.0) / 100.0
-    val opCost = operatingCostPerKg.toDoubleOrNull() ?: 1500.0
-    val margin = targetMarginPerKg.toDoubleOrNull() ?: 3000.0
+    val liveWeight = liveWeightKg.toDoubleOrNull()
+    val livePrice = livePricePerKg.toDoubleOrNull()
+    val yieldInput = carcassYieldPercent.toDoubleOrNull()
+    val opCost = operatingCostPerKg.toDoubleOrNull()
+    val margin = targetMarginPerKg.toDoubleOrNull()
+    val calcReady = liveWeight != null && liveWeight > 0.0 &&
+        livePrice != null && livePrice > 0.0 &&
+        yieldInput != null && yieldInput in 0.01..100.0 &&
+        opCost != null && opCost >= 0.0 &&
+        margin != null && margin >= 0.0
 
-    val carcassWeight = (liveWeight * yieldPct).coerceAtLeast(0.1)
-    val totalLiveCost = liveWeight * livePrice
-    val carcassBaseCostPerKg = totalLiveCost / carcassWeight
-    val bepSellingPrice = carcassBaseCostPerKg + opCost
-    val targetSellingPrice = bepSellingPrice + margin
+    val yieldPct = (yieldInput ?: 0.0) / 100.0
+    val carcassWeight = if (calcReady) liveWeight!! * yieldPct else 0.0
+    val totalLiveCost = if (calcReady) liveWeight!! * livePrice!! else 0.0
+    val carcassBaseCostPerKg = if (carcassWeight > 0.0) totalLiveCost / carcassWeight else 0.0
+    val bepSellingPrice = carcassBaseCostPerKg + (opCost ?: 0.0)
+    val targetSellingPrice = bepSellingPrice + (margin ?: 0.0)
     val estProfitPerChicken = (targetSellingPrice - bepSellingPrice) * carcassWeight
 
     LazyColumn(
@@ -353,7 +356,8 @@ fun ToolsBackupScreen(
 
                     Spacer(modifier = Modifier.height(14.dp))
 
-                    // Calculation Results Card
+                    // Calculation Results Card: render only after every required input is valid.
+                    if (calcReady) {
                     Surface(
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(12.dp),
@@ -429,6 +433,14 @@ fun ToolsBackupScreen(
                                 )
                             }
                         }
+                    }
+                    } else {
+                        Text(
+                            "Masukkan bobot hidup, harga aktual, rendemen hasil timbang, biaya potong/kg, dan target laba. Hasil tidak ditampilkan sebelum semua input valid.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.testTag("calculator_missing_real_inputs")
+                        )
                     }
                 }
             }
@@ -539,20 +551,6 @@ fun ToolsBackupScreen(
                     Spacer(modifier = Modifier.height(12.dp))
                     Divider()
                     Spacer(modifier = Modifier.height(12.dp))
-
-                    // Restore Default Data
-                    OutlinedButton(
-                        onClick = { showRestoreDefaultDialog = true },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag("btn_restore_default_drafts")
-                    ) {
-                        Icon(imageVector = Icons.Default.Restore, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Muat Ulang Data Operasional Riil")
-                    }
-
-                    Spacer(modifier = Modifier.height(8.dp))
 
                     // Reset Data
                     Button(
@@ -667,30 +665,4 @@ fun ToolsBackupScreen(
         )
     }
 
-    // Restore Default Data Dialog
-    if (showRestoreDefaultDialog) {
-        AlertDialog(
-            onDismissRequest = { showRestoreDefaultDialog = false },
-            title = { Text("Muat Ulang Data Operasional Riil") },
-            text = {
-                Text("Tindakan ini akan mengembalikan seluruh transaksi operasional riil usaha (B-027 s/d I-002). Lanjutkan?")
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        onRestoreDefaultDrafts()
-                        showRestoreDefaultDialog = false
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF176B50))
-                ) {
-                    Text("Muat Ulang")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showRestoreDefaultDialog = false }) {
-                    Text("Batal")
-                }
-            }
-        )
-    }
 }
