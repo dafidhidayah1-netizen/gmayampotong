@@ -62,7 +62,7 @@ class AyamKasViewModel(application: Application) : AndroidViewModel(application)
     private var pendingAutoSync: Job? = null
     private val repository: AyamKasRepository by lazy {
         val db = KasDatabase.getDatabase(application)
-        AyamKasRepository(db.ayamKasDao(), db.businessLedgerDao())
+        AyamKasRepository(db, db.ayamKasDao(), db.businessLedgerDao())
     }
     val allTransactions: StateFlow<List<AyamTransaction>>
     val allDeleted: StateFlow<List<DeletedAyamTransaction>>
