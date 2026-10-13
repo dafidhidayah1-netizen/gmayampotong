@@ -627,25 +627,40 @@ class AyamKasViewModel(application: Application) : AndroidViewModel(application)
 
     fun deleteTransaction(tx: AyamTransaction) {
         viewModelScope.launch {
-            repository.deleteTransaction(tx)
-            scheduleAutoSync()
-            _userMessage.emit("Transaksi “${tx.description}” dihapus")
+            runCatching { repository.deleteTransaction(tx) }
+                .onSuccess {
+                    scheduleAutoSync()
+                    _userMessage.emit("Transaksi diarsipkan dan jejak audit dipertahankan")
+                }
+                .onFailure {
+                    _userMessage.emit("Gagal mengarsipkan transaksi: ${it.message ?: "kesalahan tidak diketahui"}. Data tidak dinyatakan terhapus.")
+                }
         }
     }
 
     fun restoreDeleted(deleted: DeletedAyamTransaction) {
         viewModelScope.launch {
-            repository.restoreDeleted(deleted)
-            scheduleAutoSync()
-            _userMessage.emit("Transaksi berhasil dipulihkan")
+            runCatching { repository.restoreDeleted(deleted) }
+                .onSuccess {
+                    scheduleAutoSync()
+                    _userMessage.emit("Transaksi dipulihkan dari arsip")
+                }
+                .onFailure {
+                    _userMessage.emit("Gagal memulihkan transaksi: ${it.message ?: "periksa data transaksi"}. Catatan arsip tetap dipertahankan.")
+                }
         }
     }
 
     fun resetAllData() {
         viewModelScope.launch {
-            repository.clearAll()
-            scheduleAutoSync()
-            _userMessage.emit("Semua transaksi lokal telah dihapus")
+            runCatching { repository.clearAll() }
+                .onSuccess {
+                    scheduleAutoSync()
+                    _userMessage.emit("Transaksi aktif dipindahkan ke arsip; master dan data kas lain tidak dihapus.")
+                }
+                .onFailure {
+                    _userMessage.emit("Gagal mengarsipkan transaksi: ${it.message ?: "kesalahan tidak diketahui"}. Tidak ada pesan sukses yang ditampilkan.")
+                }
         }
     }
 
