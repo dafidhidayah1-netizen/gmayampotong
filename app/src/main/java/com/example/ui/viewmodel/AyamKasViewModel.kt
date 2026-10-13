@@ -67,6 +67,7 @@ class AyamKasViewModel(application: Application) : AndroidViewModel(application)
     val employees = repository.employees
     val attendance = repository.attendance
     val payroll = repository.payroll
+    val auditLog = repository.auditLog
 
     val cashAccountBalances: StateFlow<Map<String, Double>> = combine(
         repository.confirmedCashTransactions,
