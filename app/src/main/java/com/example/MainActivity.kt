@@ -75,6 +75,7 @@ import com.example.ui.screens.DashboardScreen
 import com.example.ui.screens.FinanceScreen
 import com.example.ui.screens.WorkforceScreen
 import com.example.ui.screens.BusinessSettingsScreen
+import com.example.ui.screens.AuditLogScreen
 import com.example.ui.screens.ReportsScreen
 import com.example.ui.screens.PurchaseDoScreen
 import com.example.ui.screens.StockScreen
@@ -92,7 +93,8 @@ enum class AyamNavTab(val title: String, val icon: ImageVector) {
     TOOLS("Cadangan", Icons.Default.Backup),
     FINANCE("Kas & Pinjaman", Icons.Default.AccountBalance),
     WORKFORCE("Karyawan", Icons.Default.Groups),
-    SETTINGS("Pengaturan", Icons.Default.Settings)
+    SETTINGS("Pengaturan", Icons.Default.Settings),
+    AUDIT("Audit Aktivitas", Icons.Default.ReceiptLong)
 }
 
 class MainActivity : ComponentActivity() {
@@ -128,6 +130,7 @@ fun AyamKasApp(viewModel: AyamKasViewModel) {
     val employees by viewModel.employees.collectAsState(emptyList())
     val attendance by viewModel.attendance.collectAsState(emptyList())
     val payroll by viewModel.payroll.collectAsState(emptyList())
+    val auditLog by viewModel.auditLog.collectAsState(emptyList())
     var showMoreMenu by remember { mutableStateOf(false) }
     val logoPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
@@ -263,7 +266,8 @@ fun AyamKasApp(viewModel: AyamKasViewModel) {
                         DropdownMenu(expanded = showMoreMenu, onDismissRequest = { showMoreMenu = false }) {
                             DropdownMenuItem(text = { Text("Kas & Pinjaman") }, onClick = { currentTab = AyamNavTab.FINANCE; showMoreMenu = false })
                             DropdownMenuItem(text = { Text("Karyawan & Payroll") }, onClick = { currentTab = AyamNavTab.WORKFORCE; showMoreMenu = false })
-                            DropdownMenuItem(text = { Text("Pengaturan Perusahaan") }, onClick = { currentTab = AyamNavTab.SETTINGS; showMoreMenu = false })
+                            DropdownMenuItem(text = { Text("Pengaturan Perusahaan & Master Data") }, onClick = { currentTab = AyamNavTab.SETTINGS; showMoreMenu = false })
+                            DropdownMenuItem(text = { Text("Audit Aktivitas") }, onClick = { currentTab = AyamNavTab.AUDIT; showMoreMenu = false })
                         }
                     }
                 }
@@ -420,6 +424,8 @@ fun AyamKasApp(viewModel: AyamKasViewModel) {
                     onChooseLogo = { logoPicker.launch(arrayOf("image/*")) },
                     onRemoveLogo = { viewModel.saveCompanyLogoUri("") }
                 )
+
+                AyamNavTab.AUDIT -> AuditLogScreen(entries = auditLog)
 
                 AyamNavTab.TOOLS -> ToolsBackupScreen(
                     onExportJson = { viewModel.exportJson(context) },
