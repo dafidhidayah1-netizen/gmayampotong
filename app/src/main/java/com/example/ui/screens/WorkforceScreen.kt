@@ -23,6 +23,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -56,6 +58,7 @@ fun WorkforceScreen(
 ) {
     val today = remember { SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date()) }
     val currentPeriod = remember { SimpleDateFormat("yyyy-MM", Locale.getDefault()).format(Date()) }
+    var activeSection by remember { mutableStateOf("employee") }
     var name by remember { mutableStateOf("") }
     var position by remember { mutableStateOf("") }
     var dailyRateText by remember { mutableStateOf("") }
@@ -120,6 +123,19 @@ fun WorkforceScreen(
             }
         }
         item {
+            TabRow(selectedTabIndex = when (activeSection) { "employee" -> 0; "attendance" -> 1; else -> 2 }) {
+                listOf("employee" to "Karyawan", "attendance" to "Absensi", "payroll" to "Payroll").forEachIndexed { index, pair ->
+                    Tab(
+                        selected = activeSection == pair.first,
+                        onClick = { activeSection = pair.first },
+                        text = { Text(pair.second) },
+                        modifier = Modifier.testTag("workforce_tab_${pair.first}")
+                    )
+                }
+            }
+        }
+        if (activeSection == "employee") {
+        item {
             Card(shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
                 Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text("Tambah karyawan", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
@@ -139,6 +155,8 @@ fun WorkforceScreen(
                     }, modifier = Modifier.fillMaxWidth().testTag("btn_save_employee")) { Text("Simpan Karyawan") }
                 }
             }
+        }
+        if (activeSection == "attendance") {
         }
         item {
             Card(shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
@@ -187,6 +205,8 @@ fun WorkforceScreen(
                     }, modifier = Modifier.fillMaxWidth().testTag("btn_save_attendance")) { Text("Simpan Absensi") }
                 }
             }
+        }
+        if (activeSection == "payroll") {
         }
         item {
             Card(shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
@@ -283,6 +303,8 @@ fun WorkforceScreen(
                 }
             }
         }
+        if (activeSection == "attendance") {
+        }
         item { Text("Absensi terbaru", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold) }
         if (attendance.isEmpty()) item { Text("Belum ada absensi.") }
         else items(attendance.take(30), key = { it.id }) { row ->
@@ -295,6 +317,8 @@ fun WorkforceScreen(
                 }
             }
         }
+        if (activeSection == "payroll") {
+        }
         item { Text("Payroll tersimpan", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold) }
         if (payroll.isEmpty()) item { Text("Belum ada rekap payroll.") }
         else items(payroll.take(30), key = { it.id }) { row ->
@@ -306,6 +330,7 @@ fun WorkforceScreen(
                     if (row.notes.isNotBlank()) Text(row.notes, style = MaterialTheme.typography.bodySmall)
                 }
             }
+        }
         }
         item { Spacer(Modifier.height(24.dp)) }
     }
