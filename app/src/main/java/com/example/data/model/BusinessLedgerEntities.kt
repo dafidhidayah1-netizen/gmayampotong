@@ -113,3 +113,21 @@ data class PayrollRecord(
     val notes: String,
     val updatedAt: String
 )
+
+
+/**
+ * Append-only local audit record. It intentionally survives deletion of the source
+ * transaction so edits, verification changes and deletions remain reviewable.
+ */
+@Entity(tableName = "transaction_audit_log", indices = [Index(value = ["entityId"]), Index(value = ["occurredAt"])])
+data class TransactionAuditLog(
+    @PrimaryKey val id: String,
+    val entityType: String,
+    val entityId: String,
+    val action: String,
+    val occurredAt: String,
+    val actor: String,
+    val summary: String,
+    val beforeData: String,
+    val afterData: String
+)
