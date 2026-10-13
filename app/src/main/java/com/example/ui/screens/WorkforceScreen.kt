@@ -182,7 +182,7 @@ fun WorkforceScreen(
                     OutlinedTextField(value = attendanceNotes, onValueChange = { attendanceNotes = it }, label = { Text("Catatan") }, modifier = Modifier.fillMaxWidth(), minLines = 2)
                     Text("Jam lembur dihitung dari jam masuk/keluar dikurangi istirahat dan jam standar karyawan.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Button(onClick = {
-                        if (attendanceEmployeeId.isNotBlank() && attendanceDate.length == 10 && (attendanceStatus != "PRESENT" || (clockIn.length == 5 && clockOut.length == 5)) ) {
+                        if (attendanceEmployeeId.isNotBlank() && AyamKasFormatters.isValidIsoDate(attendanceDate) && (attendanceStatus != "PRESENT" || (clockIn.length == 5 && clockOut.length == 5)) ) {
                             val existing = attendance.firstOrNull { it.employeeId == attendanceEmployeeId && it.workDate == attendanceDate }
                             onSaveAttendance(
                                 AttendanceRecord(
