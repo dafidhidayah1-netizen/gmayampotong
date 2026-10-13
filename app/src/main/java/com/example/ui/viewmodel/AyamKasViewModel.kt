@@ -602,9 +602,7 @@ class AyamKasViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    }
-
-    fun saveCashFlow(flow: com.example.data.model.CashFlow) {
+    fun saveCashFlow(flow: CashFlow) {
         viewModelScope.launch {
             runCatching { repository.saveCashFlow(flow) }
                 .onSuccess {
@@ -615,7 +613,7 @@ class AyamKasViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    fun saveExternalLoan(loan: com.example.data.model.ExternalLoan) {
+    fun saveExternalLoan(loan: ExternalLoan) {
         viewModelScope.launch {
             runCatching { repository.saveExternalLoan(loan) }
                 .onSuccess {
@@ -626,7 +624,7 @@ class AyamKasViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    fun saveEmployee(employee: com.example.data.model.EmployeeRecord) {
+    fun saveEmployee(employee: EmployeeRecord) {
         viewModelScope.launch {
             runCatching { repository.saveEmployee(employee) }
                 .onSuccess {
@@ -637,7 +635,7 @@ class AyamKasViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    fun saveAttendance(record: com.example.data.model.AttendanceRecord) {
+    fun saveAttendance(record: AttendanceRecord) {
         viewModelScope.launch {
             runCatching { repository.saveAttendance(record) }
                 .onSuccess {
@@ -648,7 +646,7 @@ class AyamKasViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    fun savePayroll(record: com.example.data.model.PayrollRecord) {
+    fun savePayroll(record: PayrollRecord) {
         viewModelScope.launch {
             runCatching { repository.savePayroll(record) }
                 .onSuccess {
