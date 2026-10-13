@@ -39,6 +39,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.example.data.model.AyamTransaction
+import com.example.data.model.AyamKasFormatters
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -245,7 +246,7 @@ fun PurchaseDoScreen(
                 val feed = feedPrice.toDoubleOrNull()
                 val process = processingCost.toDoubleOrNull()
                 error = when {
-                    date.length != 10 || date[4] != '-' || date[7] != '-' -> "Tanggal gunakan format YYYY-MM-DD."
+                    !AyamKasFormatters.isValidIsoDate(date) -> "Tanggal tidak valid. Gunakan tanggal nyata dengan format YYYY-MM-DD."
                     doNumber.isBlank() -> "Nomor DO wajib diisi."
                     supplier.isBlank() -> "Supplier wajib diisi."
                     qty == null || qty <= 0.0 -> "Berat DO harus lebih dari nol."
