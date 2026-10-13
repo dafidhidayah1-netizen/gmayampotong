@@ -565,9 +565,9 @@ fun AyamKasApp(viewModel: AyamKasViewModel) {
                     employees = employees,
                     attendance = attendance,
                     payroll = payroll,
-                    onSaveEmployee = { viewModel.saveEmployee(it) },
-                    onSaveAttendance = { viewModel.saveAttendance(it) },
-                    onSavePayroll = { viewModel.savePayroll(it) }
+                    onSaveEmployee = { record, onSaved -> viewModel.saveEmployee(record, onSaved) },
+                    onSaveAttendance = { record, onSaved -> viewModel.saveAttendance(record, onSaved) },
+                    onSavePayroll = { record, onSaved -> viewModel.savePayroll(record, onSaved) }
                 )
 
                 AyamNavTab.SETTINGS -> BusinessSettingsScreen(
