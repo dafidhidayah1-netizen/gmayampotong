@@ -46,6 +46,11 @@ class AyamKasViewModel(application: Application) : AndroidViewModel(application)
     private val businessPrefs = application.getSharedPreferences("ayamkaspro_business", Context.MODE_PRIVATE)
     val companyName = MutableStateFlow(businessPrefs.getString("companyName", "GM Ayam Potong").orEmpty().ifBlank { "GM Ayam Potong" })
     val companyLogoUri = MutableStateFlow(businessPrefs.getString("companyLogoUri", "").orEmpty())
+    val companyBannerUri = MutableStateFlow(businessPrefs.getString("companyBannerUri", "").orEmpty())
+    val companyAddress = MutableStateFlow(businessPrefs.getString("companyAddress", "").orEmpty())
+    val companyPhone = MutableStateFlow(businessPrefs.getString("companyPhone", "").orEmpty())
+    val companyEmail = MutableStateFlow(businessPrefs.getString("companyEmail", "").orEmpty())
+    val companyTaxId = MutableStateFlow(businessPrefs.getString("companyTaxId", "").orEmpty())
     val themeMode = MutableStateFlow(businessPrefs.getString("themeMode", "SYSTEM").orEmpty())
     private val cloudClient = GoogleSheetsSyncClient()
     val cloudUrl = MutableStateFlow(cloudPrefs.getString("url", "").orEmpty())
@@ -227,7 +232,14 @@ class AyamKasViewModel(application: Application) : AndroidViewModel(application)
         emptyList()
     )
 
-    fun saveBusinessSettings(nameInput: String, themeModeInput: String) {
+    fun saveBusinessSettings(
+        nameInput: String,
+        addressInput: String,
+        phoneInput: String,
+        emailInput: String,
+        taxIdInput: String,
+        themeModeInput: String
+    ) {
         val name = nameInput.trim()
         val theme = themeModeInput.uppercase(Locale.ROOT)
         if (name.isBlank()) {
@@ -238,10 +250,21 @@ class AyamKasViewModel(application: Application) : AndroidViewModel(application)
             viewModelScope.launch { _userMessage.emit("Mode tema tidak valid") }
             return
         }
-        businessPrefs.edit().putString("companyName", name).putString("themeMode", theme).apply()
+        businessPrefs.edit()
+            .putString("companyName", name)
+            .putString("companyAddress", addressInput.trim())
+            .putString("companyPhone", phoneInput.trim())
+            .putString("companyEmail", emailInput.trim())
+            .putString("companyTaxId", taxIdInput.trim())
+            .putString("themeMode", theme)
+            .apply()
         companyName.value = name
+        companyAddress.value = addressInput.trim()
+        companyPhone.value = phoneInput.trim()
+        companyEmail.value = emailInput.trim()
+        companyTaxId.value = taxIdInput.trim()
         themeMode.value = theme
-        viewModelScope.launch { _userMessage.emit("Nama perusahaan dan tema tersimpan") }
+        viewModelScope.launch { _userMessage.emit("Profil perusahaan, data cetak, dan tema tersimpan di perangkat ini") }
     }
 
     fun saveCompanyLogoUri(uri: String) {
@@ -249,6 +272,13 @@ class AyamKasViewModel(application: Application) : AndroidViewModel(application)
         businessPrefs.edit().putString("companyLogoUri", clean).apply()
         companyLogoUri.value = clean
         viewModelScope.launch { _userMessage.emit(if (clean.isBlank()) "Logo perusahaan dihapus" else "Logo perusahaan tersimpan") }
+    }
+
+    fun saveCompanyBannerUri(uri: String) {
+        val clean = uri.trim()
+        businessPrefs.edit().putString("companyBannerUri", clean).apply()
+        companyBannerUri.value = clean
+        viewModelScope.launch { _userMessage.emit(if (clean.isBlank()) "Banner perusahaan dihapus" else "Banner perusahaan tersimpan") }
     }
 
     fun saveCloudSettings(urlInput: String, apiKeyInput: String, autoSync: Boolean) {
