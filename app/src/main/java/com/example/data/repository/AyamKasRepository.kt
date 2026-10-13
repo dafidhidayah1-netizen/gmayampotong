@@ -1,6 +1,8 @@
 package com.example.data.repository
 
+import androidx.room.withTransaction
 import com.example.data.local.AyamKasDao
+import com.example.data.local.KasDatabase
 import com.example.data.local.BusinessLedgerDao
 import com.example.data.model.AyamTransaction
 import com.example.data.model.CashTransaction
@@ -32,6 +34,7 @@ data class CloudSyncStats(
 )
 
 class AyamKasRepository(
+    private val database: KasDatabase,
     private val dao: AyamKasDao,
     private val businessDao: BusinessLedgerDao
 ) {
@@ -51,14 +54,18 @@ class AyamKasRepository(
         if (tx.isConfirmed) validateForConfirmation(tx)
         val before = dao.getTransactionById(tx.id)
         val saved = tx.copy(updatedAt = nowIso())
-        dao.insertTransaction(saved)
-        updateCashMirror(saved)
         val action = when {
             before == null -> "BUAT"
             before.status != saved.status -> if (saved.isConfirmed) "KONFIRMASI" else "KEMBALI_DRAF"
             else -> "UBAH"
         }
-        appendTransactionAudit(action, before, saved)
+        // Transaction, cash mirror, and audit must commit together. Never leave a
+        // saved transaction without its audit event if any write fails.
+        database.withTransaction {
+            dao.insertTransaction(saved)
+            updateCashMirror(saved)
+            appendTransactionAudit(action, before, saved)
+        }
     }
 
     private fun transactionAuditSummary(tx: AyamTransaction?): String {
@@ -245,18 +252,22 @@ class AyamKasRepository(
         val confirming = currentStatus != "confirmed"
         if (confirming) validateForConfirmation(current)
         val saved = current.copy(status = if (confirming) "confirmed" else "draft", updatedAt = nowIso())
-        dao.insertTransaction(saved)
-        updateCashMirror(saved)
-        appendTransactionAudit(if (confirming) "KONFIRMASI" else "KEMBALI_DRAF", current, saved)
+        database.withTransaction {
+            dao.insertTransaction(saved)
+            updateCashMirror(saved)
+            appendTransactionAudit(if (confirming) "KONFIRMASI" else "KEMBALI_DRAF", current, saved)
+        }
     }
 
     suspend fun confirmTransaction(id: String) {
         val current = dao.getTransactionById(id) ?: throw IllegalArgumentException("Transaksi tidak ditemukan")
         validateForConfirmation(current)
         val saved = current.copy(status = "confirmed", updatedAt = nowIso())
-        dao.insertTransaction(saved)
-        updateCashMirror(saved)
-        appendTransactionAudit("KONFIRMASI", current, saved)
+        database.withTransaction {
+            dao.insertTransaction(saved)
+            updateCashMirror(saved)
+            appendTransactionAudit("KONFIRMASI", current, saved)
+        }
     }
 
     private suspend fun validateForConfirmation(tx: AyamTransaction) {
@@ -456,20 +467,22 @@ class AyamKasRepository(
             status = tx.status,
             source = tx.source
         )
-        dao.insertDeleted(deleted.copy(
-            paymentMethod = tx.paymentMethod,
-            cashAccount = tx.cashAccount,
-            supplier = tx.supplier,
-            weightLossKg = tx.weightLossKg,
-            mortalityRatePct = tx.mortalityRatePct,
-            fcr = tx.fcr,
-            weightGainKg = tx.weightGainKg,
-            feedPricePerKg = tx.feedPricePerKg,
-            processingCost = tx.processingCost
-        ))
-        dao.deleteTransaction(tx.id)
-        businessDao.deleteCashForSource(tx.id)
-        appendTransactionAudit("HAPUS_ARSIP", tx, null, "Transaksi dihapus ke arsip: ${tx.description}")
+        database.withTransaction {
+            dao.insertDeleted(deleted.copy(
+                paymentMethod = tx.paymentMethod,
+                cashAccount = tx.cashAccount,
+                supplier = tx.supplier,
+                weightLossKg = tx.weightLossKg,
+                mortalityRatePct = tx.mortalityRatePct,
+                fcr = tx.fcr,
+                weightGainKg = tx.weightGainKg,
+                feedPricePerKg = tx.feedPricePerKg,
+                processingCost = tx.processingCost
+            ))
+            dao.deleteTransaction(tx.id)
+            businessDao.deleteCashForSource(tx.id)
+            appendTransactionAudit("HAPUS_ARSIP", tx, null, "Transaksi dihapus ke arsip: ${tx.description}")
+        }
     }
 
     suspend fun restoreDeleted(deleted: DeletedAyamTransaction) {
