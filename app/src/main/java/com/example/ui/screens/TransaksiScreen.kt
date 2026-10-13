@@ -75,6 +75,7 @@ fun TransaksiScreen(
     onEditTransaction: (AyamTransaction) -> Unit,
     onToggleConfirm: (AyamTransaction) -> Unit,
     onDeleteTransaction: (AyamTransaction) -> Unit,
+    onPrintTransaction: (AyamTransaction) -> Unit,
     onConfirmAllDrafts: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -322,7 +323,8 @@ fun TransaksiScreen(
                     transaction = tx,
                     onEdit = { onEditTransaction(tx) },
                     onToggleConfirm = { onToggleConfirm(tx) },
-                    onDelete = { onDeleteTransaction(tx) }
+                    onDelete = { onDeleteTransaction(tx) },
+                    onPrint = { onPrintTransaction(tx) }
                 )
             }
         }
