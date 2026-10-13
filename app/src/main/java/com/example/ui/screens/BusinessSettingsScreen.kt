@@ -10,6 +10,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Business
 import androidx.compose.material.icons.filled.Image
@@ -39,24 +41,40 @@ import coil.compose.AsyncImage
 fun BusinessSettingsScreen(
     companyName: String,
     companyLogoUri: String,
+    companyBannerUri: String,
+    companyAddress: String,
+    companyPhone: String,
+    companyEmail: String,
+    companyTaxId: String,
     themeMode: String,
-    onSave: (String, String) -> Unit,
+    onSave: (String, String, String, String, String, String) -> Unit,
     onChooseLogo: () -> Unit,
     onRemoveLogo: () -> Unit,
+    onChooseBanner: () -> Unit,
+    onRemoveBanner: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     var name by remember(companyName) { mutableStateOf(companyName) }
+    var address by remember(companyAddress) { mutableStateOf(companyAddress) }
+    var phone by remember(companyPhone) { mutableStateOf(companyPhone) }
+    var email by remember(companyEmail) { mutableStateOf(companyEmail) }
+    var taxId by remember(companyTaxId) { mutableStateOf(companyTaxId) }
     var selectedTheme by remember(themeMode) { mutableStateOf(themeMode) }
 
     Column(
-        modifier = modifier.fillMaxSize().padding(16.dp),
+        modifier = modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        Text("Pengaturan Perusahaan", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-        Text("Identitas usaha dan tampilan disimpan di perangkat ini.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("Pengaturan Usaha & Master Profil", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+        Text(
+            "Profil ini menjadi sumber identitas untuk header aplikasi dan format nota/kwitansi cetak. Isi yang diketahui saja; jangan mengarang nomor pajak.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
 
         Card(shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
             Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("Logo untuk aplikasi dan dokumen", fontWeight = FontWeight.Bold)
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                     if (companyLogoUri.isNotBlank()) {
                         AsyncImage(
@@ -70,7 +88,7 @@ fun BusinessSettingsScreen(
                     }
                     Column(Modifier.weight(1f)) {
                         Text("Logo / ikon perusahaan", fontWeight = FontWeight.Bold)
-                        Text("Pilih gambar dari perangkat. Izin akses gambar akan disimpan untuk pemakaian berikutnya.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("Digunakan pada header aplikasi dan nota atau kwitansi cetak.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
@@ -79,15 +97,56 @@ fun BusinessSettingsScreen(
                         Text("Pilih Logo")
                     }
                     if (companyLogoUri.isNotBlank()) {
-                        OutlinedButton(onClick = onRemoveLogo, modifier = Modifier.testTag("btn_remove_company_logo")) { Text("Hapus Logo") }
+                        OutlinedButton(onClick = onRemoveLogo, modifier = Modifier.testTag("btn_remove_company_logo")) { Text("Hapus") }
                     }
                 }
+
+                Text("Banner perusahaan", fontWeight = FontWeight.Bold)
+                if (companyBannerUri.isNotBlank()) {
+                    AsyncImage(
+                        model = companyBannerUri,
+                        contentDescription = "Banner perusahaan",
+                        modifier = Modifier.fillMaxWidth().height(100.dp),
+                        contentScale = ContentScale.Crop
+                    )
+                } else {
+                    Text("Banner belum dipilih. Pilih gambar mendatar untuk header dan dokumen cetak.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                    OutlinedButton(onClick = onChooseBanner, modifier = Modifier.weight(1f).testTag("btn_choose_company_banner")) {
+                        Icon(Icons.Default.Image, contentDescription = null)
+                        Text("Pilih Banner")
+                    }
+                    if (companyBannerUri.isNotBlank()) {
+                        OutlinedButton(onClick = onRemoveBanner, modifier = Modifier.testTag("btn_remove_company_banner")) { Text("Hapus Banner") }
+                    }
+                }
+
+                Spacer(Modifier.height(4.dp))
                 OutlinedTextField(
-                    value = name,
-                    onValueChange = { name = it },
-                    label = { Text("Nama perusahaan / usaha") },
-                    modifier = Modifier.fillMaxWidth().testTag("input_company_name"),
-                    singleLine = true
+                    value = name, onValueChange = { name = it },
+                    label = { Text("Nama perusahaan / usaha *") },
+                    modifier = Modifier.fillMaxWidth().testTag("input_company_name"), singleLine = true
+                )
+                OutlinedTextField(
+                    value = address, onValueChange = { address = it },
+                    label = { Text("Alamat usaha") },
+                    modifier = Modifier.fillMaxWidth().testTag("input_company_address"), minLines = 2
+                )
+                OutlinedTextField(
+                    value = phone, onValueChange = { phone = it },
+                    label = { Text("Telepon / WhatsApp") },
+                    modifier = Modifier.fillMaxWidth().testTag("input_company_phone"), singleLine = true
+                )
+                OutlinedTextField(
+                    value = email, onValueChange = { email = it },
+                    label = { Text("Email") },
+                    modifier = Modifier.fillMaxWidth().testTag("input_company_email"), singleLine = true
+                )
+                OutlinedTextField(
+                    value = taxId, onValueChange = { taxId = it },
+                    label = { Text("NPWP (opsional)") },
+                    modifier = Modifier.fillMaxWidth().testTag("input_company_tax_id"), singleLine = true
                 )
             }
         }
@@ -101,12 +160,19 @@ fun BusinessSettingsScreen(
                         Text(label)
                     }
                 }
-                Spacer(Modifier.height(4.dp))
-                Text("Palet bawaan memakai hijau emerald, hijau gelap, dan aksen emas. Mode malam mengikuti pilihan yang Anda simpan.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
-        Button(onClick = { onSave(name, selectedTheme) }, modifier = Modifier.fillMaxWidth().testTag("btn_save_business_settings")) {
-            Text("Simpan Pengaturan")
+        Button(
+            onClick = { onSave(name, address, phone, email, taxId, selectedTheme) },
+            modifier = Modifier.fillMaxWidth().testTag("btn_save_business_settings")
+        ) {
+            Text("Simpan Profil & Pengaturan")
         }
+        Text(
+            "Catatan: gambar dipilih dari perangkat ini. Profil cetak belum tersinkron lintas perangkat sampai master profil dimasukkan ke sinkronisasi cloud.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(Modifier.height(20.dp))
     }
 }
