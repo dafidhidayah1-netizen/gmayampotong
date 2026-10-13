@@ -500,9 +500,7 @@ class AyamKasRepository(
             notes = deleted.notes,
             status = deleted.status,
             source = deleted.source,
-            updatedAt = nowIso()
-        )
-        saveTransaction(restored.copy(
+            updatedAt = nowIso(),
             paymentMethod = deleted.paymentMethod,
             cashAccount = deleted.cashAccount,
             supplier = deleted.supplier,
@@ -512,44 +510,64 @@ class AyamKasRepository(
             weightGainKg = deleted.weightGainKg,
             feedPricePerKg = deleted.feedPricePerKg,
             processingCost = deleted.processingCost
-        ))
-        dao.deleteDeleted(deleted.id)
+        )
+        if (restored.isConfirmed) validateForConfirmation(restored)
+        database.withTransaction {
+            dao.insertTransaction(restored)
+            updateCashMirror(restored)
+            appendTransactionAudit(
+                "PULIHKAN_ARSIP",
+                before = null,
+                after = restored,
+                note = "Transaksi dipulihkan dari arsip: ${restored.description}"
+            )
+            dao.deleteDeleted(deleted.id)
+        }
     }
 
     suspend fun clearAll() {
         val now = nowIso()
-        dao.getAllTransactions().first().forEach { tx ->
-            dao.insertDeleted(
-                DeletedAyamTransaction(
-                    id = "DEL-${tx.id}",
-                    originalId = tx.id,
-                    deletedAt = now,
-                    date = tx.date,
-                    ref = tx.ref,
-                    type = tx.type,
-                    category = tx.category,
-                    description = tx.description,
-                    amount = tx.amount,
-                    paidAmount = tx.paidAmount,
-                    qtyKg = tx.qtyKg,
-                    batchRef = tx.batchRef,
-                    notes = tx.notes,
-                    status = tx.status,
-                    source = tx.source,
-                    paymentMethod = tx.paymentMethod,
-                    cashAccount = tx.cashAccount,
-                    supplier = tx.supplier,
-                    weightLossKg = tx.weightLossKg,
-                    mortalityRatePct = tx.mortalityRatePct,
-                    fcr = tx.fcr,
-                    weightGainKg = tx.weightGainKg,
-                    feedPricePerKg = tx.feedPricePerKg,
-                    processingCost = tx.processingCost
+        val transactions = dao.getAllTransactions().first()
+        database.withTransaction {
+            transactions.forEach { tx ->
+                dao.insertDeleted(
+                    DeletedAyamTransaction(
+                        id = "DEL-${tx.id}",
+                        originalId = tx.id,
+                        deletedAt = now,
+                        date = tx.date,
+                        ref = tx.ref,
+                        type = tx.type,
+                        category = tx.category,
+                        description = tx.description,
+                        amount = tx.amount,
+                        paidAmount = tx.paidAmount,
+                        qtyKg = tx.qtyKg,
+                        batchRef = tx.batchRef,
+                        notes = tx.notes,
+                        status = tx.status,
+                        source = tx.source,
+                        paymentMethod = tx.paymentMethod,
+                        cashAccount = tx.cashAccount,
+                        supplier = tx.supplier,
+                        weightLossKg = tx.weightLossKg,
+                        mortalityRatePct = tx.mortalityRatePct,
+                        fcr = tx.fcr,
+                        weightGainKg = tx.weightGainKg,
+                        feedPricePerKg = tx.feedPricePerKg,
+                        processingCost = tx.processingCost
+                    )
                 )
-            )
+                appendTransactionAudit(
+                    "ARSIP_MASSAL",
+                    before = tx,
+                    after = null,
+                    note = "Transaksi dipindahkan ke arsip massal: ${tx.description}"
+                )
+            }
+            dao.clearAll()
+            businessDao.clearMirroredCashTransactions()
         }
-        dao.clearAll()
-        businessDao.clearMirroredCashTransactions()
     }
 
     fun generateJsonExport(
