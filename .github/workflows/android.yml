@@ -21,6 +21,19 @@ jobs:
       - name: Validate Google Apps Script syntax
         run: node --check < cloud-sync/Code.gs
 
+      - name: Validate standalone Google Sheets web app syntax
+        run: |
+          node --check < integrasi-google-sheets-nyata/Code.gs
+          node <<'NODE'
+          const fs = require('fs');
+          const html = fs.readFileSync('integrasi-google-sheets-nyata/Index.html', 'utf8');
+          const start = html.indexOf('<script>');
+          const end = html.indexOf('</script>', start + 8);
+          if (start < 0 || end < 0) throw new Error('No inline web application script was found.');
+          new Function(html.slice(start + 8, end));
+          console.log('Standalone Apps Script and web UI syntax are valid.');
+          NODE
+
       - name: Set up JDK 17
         uses: actions/setup-java@v5
         with:
