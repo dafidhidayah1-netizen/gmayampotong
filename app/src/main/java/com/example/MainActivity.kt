@@ -557,8 +557,8 @@ fun AyamKasApp(viewModel: AyamKasViewModel) {
                     cashBalances = cashAccountBalances,
                     cashFlows = cashFlows,
                     loans = externalLoans,
-                    onSaveCashFlow = { viewModel.saveCashFlow(it) },
-                    onSaveLoan = { viewModel.saveExternalLoan(it) }
+                    onSaveCashFlow = { flow, onSaved -> viewModel.saveCashFlow(flow, onSaved) },
+                    onSaveLoan = { loan, onSaved -> viewModel.saveExternalLoan(loan, onSaved) }
                 )
 
                 AyamNavTab.WORKFORCE -> WorkforceScreen(
