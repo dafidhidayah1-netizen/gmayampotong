@@ -87,6 +87,7 @@ fun PurchaseDoScreen(
     var menuMethod by remember { mutableStateOf(false) }
     var menuAccount by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf("") }
+    var showFeedDetails by remember(initialTransaction?.id) { mutableStateOf(initialTransaction?.fcr != null || initialTransaction?.weightGainKg != null || initialTransaction?.feedPricePerKg != null) }
 
     Column(
         modifier = modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
@@ -181,25 +182,33 @@ fun PurchaseDoScreen(
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     modifier = Modifier.fillMaxWidth().testTag("input_do_mortality_rate"), singleLine = true
                 )
-                Text("Jika batch mendapat pakan, isi ketiga bidang FCR di bawah. Biaya pakan otomatis masuk ke biaya batch sebesar FCR × pertambahan berat × harga pakan/kg.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                OutlinedTextField(
-                    value = fcr, onValueChange = { fcr = it },
-                    label = { Text("FCR (opsional)") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                    modifier = Modifier.fillMaxWidth().testTag("input_do_fcr"), singleLine = true
-                )
-                OutlinedTextField(
-                    value = weightGain, onValueChange = { weightGain = it },
-                    label = { Text("Pertambahan berat karena pakan (kg)") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                    modifier = Modifier.fillMaxWidth().testTag("input_do_weight_gain"), singleLine = true
-                )
-                OutlinedTextField(
-                    value = feedPrice, onValueChange = { feedPrice = it.filter(Char::isDigit) },
-                    label = { Text("Harga pakan per kg (Rp)") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    modifier = Modifier.fillMaxWidth().testTag("input_do_feed_price"), singleLine = true
-                )
+                OutlinedButton(
+                    onClick = { showFeedDetails = !showFeedDetails },
+                    modifier = Modifier.fillMaxWidth().testTag("btn_toggle_feed_details")
+                ) {
+                    Text(if (showFeedDetails) "Sembunyikan pengaturan pakan lanjutan" else "Tambah pengaturan pakan (opsional)")
+                }
+                if (showFeedDetails) {
+                    Text("Jika batch mendapat pakan, isi ketiga bidang FCR di bawah. Biaya pakan otomatis masuk ke biaya batch sebesar FCR × pertambahan berat × harga pakan/kg.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    OutlinedTextField(
+                        value = fcr, onValueChange = { fcr = it },
+                        label = { Text("FCR (opsional)") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        modifier = Modifier.fillMaxWidth().testTag("input_do_fcr"), singleLine = true
+                    )
+                    OutlinedTextField(
+                        value = weightGain, onValueChange = { weightGain = it },
+                        label = { Text("Pertambahan berat karena pakan (kg)") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        modifier = Modifier.fillMaxWidth().testTag("input_do_weight_gain"), singleLine = true
+                    )
+                    OutlinedTextField(
+                        value = feedPrice, onValueChange = { feedPrice = it.filter(Char::isDigit) },
+                        label = { Text("Harga pakan per kg (Rp)") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier.fillMaxWidth().testTag("input_do_feed_price"), singleLine = true
+                    )
+                }
                 OutlinedTextField(
                     value = processingCost, onValueChange = { processingCost = it.filter(Char::isDigit) },
                     label = { Text("Biaya pemotongan/pengolahan batch (Rp) * — isi 0 jika tidak ada") },
