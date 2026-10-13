@@ -174,6 +174,11 @@ object AyamKasFormatters {
         return numberFormat.format(value)
     }
 
+    /** Strict calendar validation; a matching YYYY-MM-DD shape alone is not sufficient. */
+    fun isValidIsoDate(value: String): Boolean =
+        runCatching { java.time.LocalDate.parse(value, java.time.format.DateTimeFormatter.ISO_LOCAL_DATE) }
+            .isSuccess
+
     fun formatDate(isoDate: String): String {
         if (isoDate.isBlank()) return "—"
         val parts = isoDate.split("-")
