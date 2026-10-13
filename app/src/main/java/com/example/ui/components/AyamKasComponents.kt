@@ -20,6 +20,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Print
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -165,6 +166,7 @@ fun TransactionItemCard(
     onEdit: () -> Unit,
     onToggleConfirm: () -> Unit,
     onDelete: () -> Unit,
+    onPrint: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val typeEnum = AyamTransactionType.fromKey(transaction.type)
@@ -353,6 +355,17 @@ fun TransactionItemCard(
                     Icon(imageVector = Icons.Default.Check, contentDescription = "Validasi", modifier = Modifier.size(16.dp))
                     Spacer(modifier = Modifier.width(4.dp))
                     Text(text = if (isConfirmed) "Batal Verifikasi" else "Konfirmasi", fontSize = 12.sp)
+                }
+                IconButton(
+                    onClick = onPrint,
+                    modifier = Modifier.testTag("btn_print_${transaction.id}")
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Print,
+                        contentDescription = "Cetak nota / kwitansi",
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(18.dp)
+                    )
                 }
                 Spacer(modifier = Modifier.width(4.dp))
                 IconButton(
