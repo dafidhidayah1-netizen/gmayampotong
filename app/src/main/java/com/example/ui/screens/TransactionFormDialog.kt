@@ -102,7 +102,7 @@ fun TransactionFormDialog(
     }
     var batchRef by remember { mutableStateOf(transaction?.batchRef ?: "") }
     var notes by remember { mutableStateOf(transaction?.notes ?: "") }
-    var isConfirmed by remember { mutableStateOf(transaction?.isConfirmed ?: true) }
+    var isConfirmed by remember { mutableStateOf(transaction?.isConfirmed ?: false) }
     var paymentMethod by remember { mutableStateOf(transaction?.paymentMethod ?: "CASH") }
     var cashAccount by remember { mutableStateOf(transaction?.cashAccount ?: "DOMPET") }
 
@@ -501,12 +501,12 @@ fun TransactionFormDialog(
                     Spacer(modifier = Modifier.width(8.dp))
                     Column {
                         Text(
-                            text = "Konfirmasi transaksi dan masukkan ke laporan",
+                            text = if (isConfirmed) "Verifikasi sekarang dan masukkan ke laporan" else "Simpan cepat sebagai draf",
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.SemiBold
                         )
                         Text(
-                            text = "Jika masih draf atau belum pasti, hilangkan centang.",
+                            text = if (isConfirmed) "Data harus lengkap dan valid agar memengaruhi saldo dan laporan." else "Bisa disimpan dulu; lengkapi pembayaran/DO dan verifikasi nanti.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -536,11 +536,11 @@ fun TransactionFormDialog(
                                 return@Button
                             }
                             val paidAmt = if (isCashOnly) amt else paidAmountText.toDoubleOrNull()
-                            if (paidAmt == null || paidAmt < 0.0) {
-                                errorMessage = "Nominal yang dibayar/diterima wajib diisi (boleh 0)."
+                            if (isConfirmed && (paidAmt == null || paidAmt < 0.0)) {
+                                errorMessage = "Untuk verifikasi, isi nominal kas aktual (boleh Rp0 jika kredit)."
                                 return@Button
                             }
-                            if (paidAmt > amt && (type == "sale" || type == "purchase" || type == "expense")) {
+                            if (paidAmt != null && paidAmt > amt && (type == "sale" || type == "purchase" || type == "expense")) {
                                 errorMessage = "Pembayaran tunai tidak boleh melebihi nominal transaksi."
                                 return@Button
                             }
