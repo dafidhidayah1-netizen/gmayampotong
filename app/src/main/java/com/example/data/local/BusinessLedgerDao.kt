@@ -10,10 +10,17 @@ import com.example.data.model.CashTransaction
 import com.example.data.model.EmployeeRecord
 import com.example.data.model.ExternalLoan
 import com.example.data.model.PayrollRecord
+import com.example.data.model.TransactionAuditLog
 import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface BusinessLedgerDao {
+    @Query("SELECT * FROM transaction_audit_log ORDER BY occurredAt DESC, id DESC LIMIT 1000")
+    fun observeAuditLog(): Flow<List<TransactionAuditLog>>
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun appendAuditLog(entry: TransactionAuditLog)
+
     @Query("SELECT * FROM cash_transactions WHERE deleted = 0 ORDER BY date DESC, id DESC")
     fun observeCashTransactions(): Flow<List<CashTransaction>>
 
