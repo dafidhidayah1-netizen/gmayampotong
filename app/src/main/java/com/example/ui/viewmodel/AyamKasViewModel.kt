@@ -664,25 +664,27 @@ class AyamKasViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    fun saveCashFlow(flow: CashFlow) {
+    fun saveCashFlow(flow: CashFlow, onSaved: () -> Unit = {}) {
         viewModelScope.launch {
             runCatching { repository.saveCashFlow(flow) }
                 .onSuccess {
                     scheduleAutoSync()
                     _userMessage.emit("Transfer antar rekening tersimpan")
+                    onSaved()
                 }
-                .onFailure { _userMessage.emit(it.message ?: "Transfer gagal disimpan") }
+                .onFailure { _userMessage.emit(it.message ?: "Transfer gagal disimpan. Isi form tetap dipertahankan.") }
         }
     }
 
-    fun saveExternalLoan(loan: ExternalLoan) {
+    fun saveExternalLoan(loan: ExternalLoan, onSaved: () -> Unit = {}) {
         viewModelScope.launch {
             runCatching { repository.saveExternalLoan(loan) }
                 .onSuccess {
                     scheduleAutoSync()
                     _userMessage.emit("Catatan pinjaman tersimpan terpisah dari laba usaha")
+                    onSaved()
                 }
-                .onFailure { _userMessage.emit(it.message ?: "Pinjaman gagal disimpan") }
+                .onFailure { _userMessage.emit(it.message ?: "Pinjaman gagal disimpan. Isi form tetap dipertahankan.") }
         }
     }
 
