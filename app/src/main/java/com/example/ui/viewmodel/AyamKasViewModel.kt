@@ -46,6 +46,11 @@ class AyamKasViewModel(application: Application) : AndroidViewModel(application)
     private val businessPrefs = application.getSharedPreferences("ayamkaspro_business", Context.MODE_PRIVATE)
     val companyName = MutableStateFlow(businessPrefs.getString("companyName", "GM Ayam Potong").orEmpty().ifBlank { "GM Ayam Potong" })
     val companyLogoUri = MutableStateFlow(businessPrefs.getString("companyLogoUri", "").orEmpty())
+    val companyBannerUri = MutableStateFlow(businessPrefs.getString("companyBannerUri", "").orEmpty())
+    val companyAddress = MutableStateFlow(businessPrefs.getString("companyAddress", "").orEmpty())
+    val companyPhone = MutableStateFlow(businessPrefs.getString("companyPhone", "").orEmpty())
+    val companyEmail = MutableStateFlow(businessPrefs.getString("companyEmail", "").orEmpty())
+    val companyTaxId = MutableStateFlow(businessPrefs.getString("companyTaxId", "").orEmpty())
     val themeMode = MutableStateFlow(businessPrefs.getString("themeMode", "SYSTEM").orEmpty())
     private val cloudClient = GoogleSheetsSyncClient()
     val cloudUrl = MutableStateFlow(cloudPrefs.getString("url", "").orEmpty())
@@ -57,7 +62,7 @@ class AyamKasViewModel(application: Application) : AndroidViewModel(application)
     private var pendingAutoSync: Job? = null
     private val repository: AyamKasRepository by lazy {
         val db = KasDatabase.getDatabase(application)
-        AyamKasRepository(db.ayamKasDao(), db.businessLedgerDao())
+        AyamKasRepository(db, db.ayamKasDao(), db.businessLedgerDao())
     }
     val allTransactions: StateFlow<List<AyamTransaction>>
     val allDeleted: StateFlow<List<DeletedAyamTransaction>>
@@ -67,6 +72,7 @@ class AyamKasViewModel(application: Application) : AndroidViewModel(application)
     val employees = repository.employees
     val attendance = repository.attendance
     val payroll = repository.payroll
+    val auditLog = repository.auditLog
 
     val cashAccountBalances: StateFlow<Map<String, Double>> = combine(
         repository.confirmedCashTransactions,
@@ -226,7 +232,14 @@ class AyamKasViewModel(application: Application) : AndroidViewModel(application)
         emptyList()
     )
 
-    fun saveBusinessSettings(nameInput: String, themeModeInput: String) {
+    fun saveBusinessSettings(
+        nameInput: String,
+        addressInput: String,
+        phoneInput: String,
+        emailInput: String,
+        taxIdInput: String,
+        themeModeInput: String
+    ) {
         val name = nameInput.trim()
         val theme = themeModeInput.uppercase(Locale.ROOT)
         if (name.isBlank()) {
@@ -237,10 +250,21 @@ class AyamKasViewModel(application: Application) : AndroidViewModel(application)
             viewModelScope.launch { _userMessage.emit("Mode tema tidak valid") }
             return
         }
-        businessPrefs.edit().putString("companyName", name).putString("themeMode", theme).apply()
+        businessPrefs.edit()
+            .putString("companyName", name)
+            .putString("companyAddress", addressInput.trim())
+            .putString("companyPhone", phoneInput.trim())
+            .putString("companyEmail", emailInput.trim())
+            .putString("companyTaxId", taxIdInput.trim())
+            .putString("themeMode", theme)
+            .apply()
         companyName.value = name
+        companyAddress.value = addressInput.trim()
+        companyPhone.value = phoneInput.trim()
+        companyEmail.value = emailInput.trim()
+        companyTaxId.value = taxIdInput.trim()
         themeMode.value = theme
-        viewModelScope.launch { _userMessage.emit("Nama perusahaan dan tema tersimpan") }
+        viewModelScope.launch { _userMessage.emit("Profil perusahaan, data cetak, dan tema tersimpan di perangkat ini") }
     }
 
     fun saveCompanyLogoUri(uri: String) {
@@ -248,6 +272,13 @@ class AyamKasViewModel(application: Application) : AndroidViewModel(application)
         businessPrefs.edit().putString("companyLogoUri", clean).apply()
         companyLogoUri.value = clean
         viewModelScope.launch { _userMessage.emit(if (clean.isBlank()) "Logo perusahaan dihapus" else "Logo perusahaan tersimpan") }
+    }
+
+    fun saveCompanyBannerUri(uri: String) {
+        val clean = uri.trim()
+        businessPrefs.edit().putString("companyBannerUri", clean).apply()
+        companyBannerUri.value = clean
+        viewModelScope.launch { _userMessage.emit(if (clean.isBlank()) "Banner perusahaan dihapus" else "Banner perusahaan tersimpan") }
     }
 
     fun saveCloudSettings(urlInput: String, apiKeyInput: String, autoSync: Boolean) {
@@ -382,7 +413,7 @@ class AyamKasViewModel(application: Application) : AndroidViewModel(application)
         editingId: String? = null
     ) {
         val invalid = when {
-            date.isBlank() -> "Tanggal pembelian wajib diisi"
+            !AyamKasFormatters.isValidIsoDate(date) -> "Tanggal pembelian tidak valid. Gunakan tanggal nyata YYYY-MM-DD."
             doNumber.isBlank() -> "Nomor DO wajib diisi"
             supplier.isBlank() -> "Nama supplier wajib diisi"
             quantityKg <= 0.0 -> "Berat pembelian harus lebih dari nol"
@@ -428,9 +459,9 @@ class AyamKasViewModel(application: Application) : AndroidViewModel(application)
             fcr = fcr,
             weightGainKg = weightGainKg,
             feedPricePerKg = feedPricePerKg,
-            processingCost = processingCost
+            processingCost = processingCost,
+            onSaved = { closePurchaseDoScreen() }
         )
-        isPurchaseDoScreenOpen.value = false
     }
 
     fun closeForm() {
@@ -460,20 +491,21 @@ class AyamKasViewModel(application: Application) : AndroidViewModel(application)
         fcr: Double? = null,
         weightGainKg: Double? = null,
         feedPricePerKg: Double? = null,
-        processingCost: Double = 0.0
+        processingCost: Double = 0.0,
+        onSaved: (() -> Unit)? = null
     ) {
         val existingBeforeSave = id?.let { key -> allTransactions.value.firstOrNull { it.id == key } }
-        if (date.length != 10 || date[4] != '-' || date[7] != '-') {
-            viewModelScope.launch { _userMessage.emit("Tanggal transaksi harus berformat YYYY-MM-DD") }
+        if (!AyamKasFormatters.isValidIsoDate(date)) {
+            viewModelScope.launch { _userMessage.emit("Tanggal tidak valid. Gunakan tanggal nyata dengan format YYYY-MM-DD.") }
             return
         }
         if (amount <= 0.0) {
             viewModelScope.launch { _userMessage.emit("Nominal transaksi harus lebih dari nol") }
             return
         }
-        if (type in listOf("sale", "purchase", "expense") &&
+        if (isConfirmed && type in listOf("sale", "purchase", "expense") &&
             (paidAmount == null || paidAmount < 0.0 || paidAmount > amount)) {
-            viewModelScope.launch { _userMessage.emit("Pembayaran harus diisi di antara Rp0 dan nominal transaksi") }
+            viewModelScope.launch { _userMessage.emit("Untuk verifikasi, nominal kas aktual harus diisi antara Rp0 dan total transaksi. Gunakan Rp0 untuk transaksi kredit.") }
             return
         }
         if (type == "sale" && isConfirmed) {
@@ -529,10 +561,25 @@ class AyamKasViewModel(application: Application) : AndroidViewModel(application)
                 feedPricePerKg = feedPricePerKg,
                 processingCost = processingCost
             )
-            repository.saveTransaction(tx)
+            val result = runCatching { repository.saveTransaction(tx) }
+            if (result.isFailure) {
+                _userMessage.emit(
+                    "Penyimpanan gagal: ${result.exceptionOrNull()?.message ?: "kesalahan tidak diketahui"}. " +
+                        "Form tetap dibuka; periksa pesan sebelum mencoba lagi."
+                )
+                return@launch
+            }
             scheduleAutoSync()
             closeForm()
-            _userMessage.emit(if (existing != null) "Transaksi diperbarui" else "Transaksi disimpan")
+            _userMessage.emit(
+                when {
+                    existing != null && isConfirmed -> "Transaksi diperbarui dan terverifikasi"
+                    existing != null -> "Transaksi diperbarui sebagai draf"
+                    isConfirmed -> "Transaksi disimpan dan terverifikasi"
+                    else -> "Transaksi disimpan sebagai draf; bisa dilengkapi dan diverifikasi nanti"
+                }
+            )
+            onSaved?.invoke()
         }
     }
 
@@ -580,80 +627,100 @@ class AyamKasViewModel(application: Application) : AndroidViewModel(application)
 
     fun deleteTransaction(tx: AyamTransaction) {
         viewModelScope.launch {
-            repository.deleteTransaction(tx)
-            scheduleAutoSync()
-            _userMessage.emit("Transaksi “${tx.description}” dihapus")
+            runCatching { repository.deleteTransaction(tx) }
+                .onSuccess {
+                    scheduleAutoSync()
+                    _userMessage.emit("Transaksi diarsipkan dan jejak audit dipertahankan")
+                }
+                .onFailure {
+                    _userMessage.emit("Gagal mengarsipkan transaksi: ${it.message ?: "kesalahan tidak diketahui"}. Data tidak dinyatakan terhapus.")
+                }
         }
     }
 
     fun restoreDeleted(deleted: DeletedAyamTransaction) {
         viewModelScope.launch {
-            repository.restoreDeleted(deleted)
-            scheduleAutoSync()
-            _userMessage.emit("Transaksi berhasil dipulihkan")
+            runCatching { repository.restoreDeleted(deleted) }
+                .onSuccess {
+                    scheduleAutoSync()
+                    _userMessage.emit("Transaksi dipulihkan dari arsip")
+                }
+                .onFailure {
+                    _userMessage.emit("Gagal memulihkan transaksi: ${it.message ?: "periksa data transaksi"}. Catatan arsip tetap dipertahankan.")
+                }
         }
     }
 
     fun resetAllData() {
         viewModelScope.launch {
-            repository.clearAll()
-            scheduleAutoSync()
-            _userMessage.emit("Semua transaksi lokal telah dihapus")
+            runCatching { repository.clearAll() }
+                .onSuccess {
+                    scheduleAutoSync()
+                    _userMessage.emit("Transaksi aktif dipindahkan ke arsip; master dan data kas lain tidak dihapus.")
+                }
+                .onFailure {
+                    _userMessage.emit("Gagal mengarsipkan transaksi: ${it.message ?: "kesalahan tidak diketahui"}. Tidak ada pesan sukses yang ditampilkan.")
+                }
         }
     }
 
-    fun saveCashFlow(flow: CashFlow) {
+    fun saveCashFlow(flow: CashFlow, onSaved: () -> Unit = {}) {
         viewModelScope.launch {
             runCatching { repository.saveCashFlow(flow) }
                 .onSuccess {
                     scheduleAutoSync()
                     _userMessage.emit("Transfer antar rekening tersimpan")
+                    onSaved()
                 }
-                .onFailure { _userMessage.emit(it.message ?: "Transfer gagal disimpan") }
+                .onFailure { _userMessage.emit(it.message ?: "Transfer gagal disimpan. Isi form tetap dipertahankan.") }
         }
     }
 
-    fun saveExternalLoan(loan: ExternalLoan) {
+    fun saveExternalLoan(loan: ExternalLoan, onSaved: () -> Unit = {}) {
         viewModelScope.launch {
             runCatching { repository.saveExternalLoan(loan) }
                 .onSuccess {
                     scheduleAutoSync()
                     _userMessage.emit("Catatan pinjaman tersimpan terpisah dari laba usaha")
+                    onSaved()
                 }
-                .onFailure { _userMessage.emit(it.message ?: "Pinjaman gagal disimpan") }
+                .onFailure { _userMessage.emit(it.message ?: "Pinjaman gagal disimpan. Isi form tetap dipertahankan.") }
         }
     }
 
-    fun saveEmployee(employee: EmployeeRecord) {
+    fun saveEmployee(employee: EmployeeRecord, onSaved: () -> Unit = {}) {
         viewModelScope.launch {
             runCatching { repository.saveEmployee(employee) }
                 .onSuccess {
                     scheduleAutoSync()
                     _userMessage.emit("Data karyawan tersimpan")
+                    onSaved()
                 }
-                .onFailure { _userMessage.emit(it.message ?: "Karyawan gagal disimpan") }
+                .onFailure { _userMessage.emit("Karyawan gagal disimpan: ${it.message ?: "periksa data"}. Input tetap dipertahankan.") }
         }
     }
 
-    fun saveAttendance(record: AttendanceRecord) {
+    fun saveAttendance(record: AttendanceRecord, onSaved: () -> Unit = {}) {
         viewModelScope.launch {
             runCatching { repository.saveAttendance(record) }
                 .onSuccess {
                     scheduleAutoSync()
                     _userMessage.emit("Absensi tersimpan")
+                    onSaved()
                 }
-                .onFailure { _userMessage.emit(it.message ?: "Absensi gagal disimpan") }
+                .onFailure { _userMessage.emit("Absensi gagal disimpan: ${it.message ?: "periksa data"}. Input tetap dipertahankan.") }
         }
     }
 
-    fun savePayroll(record: PayrollRecord) {
+    fun savePayroll(record: PayrollRecord, onSaved: () -> Unit = {}) {
         viewModelScope.launch {
             runCatching { repository.savePayroll(record) }
                 .onSuccess {
                     scheduleAutoSync()
                     _userMessage.emit("Rekap payroll tersimpan dan biaya gaji diposting ke buku usaha")
+                    onSaved()
                 }
-                .onFailure { _userMessage.emit(it.message ?: "Payroll gagal disimpan") }
+                .onFailure { _userMessage.emit("Payroll gagal disimpan: ${it.message ?: "periksa data"}. Input tetap dipertahankan.") }
         }
     }
 

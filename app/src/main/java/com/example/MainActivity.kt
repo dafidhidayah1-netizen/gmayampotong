@@ -2,6 +2,12 @@ package com.example
 
 import android.os.Bundle
 import android.content.Intent
+import android.content.Context
+import android.print.PrintAttributes
+import android.print.PrintManager
+import android.util.Base64
+import android.webkit.WebView
+import android.webkit.WebViewClient
 import android.net.Uri
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -75,6 +81,7 @@ import com.example.ui.screens.DashboardScreen
 import com.example.ui.screens.FinanceScreen
 import com.example.ui.screens.WorkforceScreen
 import com.example.ui.screens.BusinessSettingsScreen
+import com.example.ui.screens.AuditLogScreen
 import com.example.ui.screens.ReportsScreen
 import com.example.ui.screens.PurchaseDoScreen
 import com.example.ui.screens.StockScreen
@@ -83,6 +90,128 @@ import com.example.ui.screens.TransactionFormDialog
 import com.example.ui.screens.TransaksiScreen
 import com.example.ui.theme.MyApplicationTheme
 import com.example.ui.viewmodel.AyamKasViewModel
+import com.example.data.model.AyamKasFormatters
+import com.example.data.model.AyamTransaction
+
+private fun escapeReceiptHtml(value: String): String = value
+    .replace("&", "&amp;")
+    .replace("<", "&lt;")
+    .replace(">", "&gt;")
+    .replace("\"", "&quot;")
+    .replace("'", "&#39;")
+
+private fun imageUriAsDataUrl(context: Context, value: String): String {
+    if (value.isBlank()) return ""
+    return runCatching {
+        val uri = Uri.parse(value)
+        val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+            ?: throw IllegalStateException("Gambar tidak dapat dibuka")
+        val mime = context.contentResolver.getType(uri) ?: "image/jpeg"
+        "data:$mime;base64," + Base64.encodeToString(bytes, Base64.NO_WRAP)
+    }.getOrDefault("")
+}
+
+/** Builds a print-ready nota or kwitansi from the saved transaction and company profile. */
+private fun printTransactionReceipt(
+    context: Context,
+    transaction: AyamTransaction,
+    companyName: String,
+    companyAddress: String,
+    companyPhone: String,
+    companyEmail: String,
+    companyTaxId: String,
+    companyLogoUri: String,
+    companyBannerUri: String
+) {
+    val manager = context.getSystemService(Context.PRINT_SERVICE) as? PrintManager ?: return
+    val documentRef = transaction.ref.ifBlank { transaction.id }
+    val title = when (transaction.type) {
+        "sale" -> "Kwitansi-Penjualan-$documentRef"
+        "purchase" -> "Nota-Pembelian-$documentRef"
+        else -> "Bukti-Transaksi-$documentRef"
+    }
+    val logo = imageUriAsDataUrl(context, companyLogoUri)
+    val banner = imageUriAsDataUrl(context, companyBannerUri)
+    val amount = AyamKasFormatters.formatRupiah(transaction.amount)
+    val actualCash = transaction.paidAmount ?: kotlin.math.abs(transaction.cashEffect())
+    val paid = AyamKasFormatters.formatRupiah(actualCash)
+    val outstanding = if (transaction.type in listOf("sale", "purchase")) {
+        (transaction.amount - actualCash).coerceAtLeast(0.0)
+    } else 0.0
+    val docTitle = when (transaction.type) {
+        "sale" -> "KWITANSI PENJUALAN"
+        "purchase" -> "NOTA PEMBELIAN"
+        else -> "BUKTI TRANSAKSI"
+    }
+    val statusBanner = if (transaction.isConfirmed) "" else "<div class='status'>DRAF — BELUM TERVERIFIKASI</div>"
+    val html = """
+        <!doctype html><html><head><meta charset="utf-8">
+        <style>
+          @page { size: A5; margin: 10mm; }
+          body { font-family: Arial, sans-serif; color: #18251f; font-size: 12px; }
+          .banner { width:100%; max-height:70px; object-fit:cover; margin-bottom:8px; }
+          .brand { display:flex; align-items:center; gap:12px; border-bottom:2px solid #176b50; padding-bottom:10px; }
+          .logo { width:64px; height:64px; object-fit:contain; }
+          .name { font-size:18px; font-weight:bold; margin:0 0 4px; }
+          .sub { color:#4c5d54; margin:2px 0; font-size:10px; }
+          h2 { text-align:center; font-size:16px; margin:18px 0 12px; }
+          .status { background:#fff0d2; padding:7px; font-weight:bold; margin:8px 0; text-align:center; }
+          table { width:100%; border-collapse:collapse; margin-top:12px; }
+          td { padding:7px 4px; border-bottom:1px solid #dce5df; vertical-align:top; }
+          td:first-child { width:38%; color:#526259; }
+          .total { font-weight:bold; font-size:14px; }
+          .signature { display:flex; justify-content:space-between; margin-top:34px; text-align:center; }
+          .sig { width:42%; border-top:1px solid #aab5ae; padding-top:6px; }
+          .foot { text-align:center; border-top:1px dashed #aab5ae; margin-top:20px; padding-top:8px; color:#526259; font-size:9px; }
+        </style></head><body>
+        ${if (banner.isNotBlank()) "<img class='banner' src='$banner' alt='Banner perusahaan'>" else ""}
+        <div class="brand">
+          ${if (logo.isNotBlank()) "<img class='logo' src='$logo' alt='Logo perusahaan'>" else ""}
+          <div>
+            <p class="name">${escapeReceiptHtml(companyName.ifBlank { "Nama Usaha Belum Diatur" })}</p>
+            ${if (companyAddress.isNotBlank()) "<p class='sub'>${escapeReceiptHtml(companyAddress)}</p>" else ""}
+            ${if (companyPhone.isNotBlank()) "<p class='sub'>Telp/WA: ${escapeReceiptHtml(companyPhone)}</p>" else ""}
+            ${if (companyEmail.isNotBlank()) "<p class='sub'>Email: ${escapeReceiptHtml(companyEmail)}</p>" else ""}
+            ${if (companyTaxId.isNotBlank()) "<p class='sub'>NPWP: ${escapeReceiptHtml(companyTaxId)}</p>" else ""}
+          </div>
+        </div>
+        <h2>$docTitle</h2>
+        $statusBanner
+        <table>
+          <tr><td>Nomor dokumen</td><td>${escapeReceiptHtml(documentRef)}</td></tr>
+          <tr><td>Tanggal</td><td>${escapeReceiptHtml(AyamKasFormatters.formatDate(transaction.date))}</td></tr>
+          <tr><td>Jenis transaksi</td><td>${escapeReceiptHtml(com.example.data.model.AyamTransactionType.fromKey(transaction.type).label)}</td></tr>
+          <tr><td>Keterangan</td><td>${escapeReceiptHtml(transaction.description)}</td></tr>
+          ${if (transaction.qtyKg != null) "<tr><td>Berat</td><td>${escapeReceiptHtml(AyamKasFormatters.formatNumber(transaction.qtyKg))} kg</td></tr>" else ""}
+          ${if (transaction.batchRef.isNotBlank()) "<tr><td>DO terkait</td><td>${escapeReceiptHtml(transaction.batchRef)}</td></tr>" else ""}
+          <tr><td>Total transaksi</td><td class="total">$amount</td></tr>
+          <tr><td>Kas diterima/dibayar</td><td>$paid</td></tr>
+          ${if (transaction.type in listOf("sale", "purchase") && outstanding > 0) "<tr><td>Sisa piutang/utang</td><td>${AyamKasFormatters.formatRupiah(outstanding)}</td></tr>" else ""}
+          <tr><td>Metode pembayaran</td><td>${escapeReceiptHtml(transaction.paymentMethod)}</td></tr>
+          <tr><td>Akun kas</td><td>${escapeReceiptHtml(transaction.cashAccount)}</td></tr>
+          ${if (transaction.notes.isNotBlank()) "<tr><td>Catatan</td><td>${escapeReceiptHtml(transaction.notes)}</td></tr>" else ""}
+        </table>
+        <div class="signature"><div class="sig">Penerima / Pembeli</div><div class="sig">Petugas / Penjual</div></div>
+        <div class="foot">Dokumen dibuat dari AyamKas Pro. Simpan nota ini bersama bukti pembayaran asli.</div>
+        </body></html>
+    """.trimIndent()
+
+    val webView = WebView(context)
+    webView.settings.javaScriptEnabled = false
+    webView.webViewClient = object : WebViewClient() {
+        override fun onPageFinished(view: WebView, url: String?) {
+            manager.print(
+                title,
+                view.createPrintDocumentAdapter(title),
+                PrintAttributes.Builder()
+                    .setMediaSize(PrintAttributes.MediaSize.ISO_A5)
+                    .setMinMargins(PrintAttributes.Margins.NO_MARGINS)
+                    .build()
+            )
+        }
+    }
+    webView.loadDataWithBaseURL(null, html, "text/html", "UTF-8", null)
+}
 
 enum class AyamNavTab(val title: String, val icon: ImageVector) {
     DASHBOARD("Ringkasan", Icons.Default.Dashboard),
@@ -92,7 +221,8 @@ enum class AyamNavTab(val title: String, val icon: ImageVector) {
     TOOLS("Cadangan", Icons.Default.Backup),
     FINANCE("Kas & Pinjaman", Icons.Default.AccountBalance),
     WORKFORCE("Karyawan", Icons.Default.Groups),
-    SETTINGS("Pengaturan", Icons.Default.Settings)
+    SETTINGS("Pengaturan", Icons.Default.Settings),
+    AUDIT("Audit Aktivitas", Icons.Default.ReceiptLong)
 }
 
 class MainActivity : ComponentActivity() {
@@ -122,12 +252,18 @@ fun AyamKasApp(viewModel: AyamKasViewModel) {
     val context = LocalContext.current
     val companyName by viewModel.companyName.collectAsState()
     val companyLogoUri by viewModel.companyLogoUri.collectAsState()
+    val companyBannerUri by viewModel.companyBannerUri.collectAsState()
+    val companyAddress by viewModel.companyAddress.collectAsState()
+    val companyPhone by viewModel.companyPhone.collectAsState()
+    val companyEmail by viewModel.companyEmail.collectAsState()
+    val companyTaxId by viewModel.companyTaxId.collectAsState()
     val cashAccountBalances by viewModel.cashAccountBalances.collectAsState()
     val cashFlows by viewModel.cashFlows.collectAsState(emptyList())
     val externalLoans by viewModel.externalLoans.collectAsState(emptyList())
     val employees by viewModel.employees.collectAsState(emptyList())
     val attendance by viewModel.attendance.collectAsState(emptyList())
     val payroll by viewModel.payroll.collectAsState(emptyList())
+    val auditLog by viewModel.auditLog.collectAsState(emptyList())
     var showMoreMenu by remember { mutableStateOf(false) }
     val logoPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
@@ -135,6 +271,14 @@ fun AyamKasApp(viewModel: AyamKasViewModel) {
                 context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
             viewModel.saveCompanyLogoUri(uri.toString())
+        }
+    }
+    val bannerPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            runCatching {
+                context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            viewModel.saveCompanyBannerUri(uri.toString())
         }
     }
     val snackbarHostState = remember { SnackbarHostState() }
@@ -263,7 +407,8 @@ fun AyamKasApp(viewModel: AyamKasViewModel) {
                         DropdownMenu(expanded = showMoreMenu, onDismissRequest = { showMoreMenu = false }) {
                             DropdownMenuItem(text = { Text("Kas & Pinjaman") }, onClick = { currentTab = AyamNavTab.FINANCE; showMoreMenu = false })
                             DropdownMenuItem(text = { Text("Karyawan & Payroll") }, onClick = { currentTab = AyamNavTab.WORKFORCE; showMoreMenu = false })
-                            DropdownMenuItem(text = { Text("Pengaturan Perusahaan") }, onClick = { currentTab = AyamNavTab.SETTINGS; showMoreMenu = false })
+                            DropdownMenuItem(text = { Text("Profil Perusahaan & Tampilan") }, onClick = { currentTab = AyamNavTab.SETTINGS; showMoreMenu = false })
+                            DropdownMenuItem(text = { Text("Audit Aktivitas") }, onClick = { currentTab = AyamNavTab.AUDIT; showMoreMenu = false })
                         }
                     }
                 }
@@ -372,6 +517,19 @@ fun AyamKasApp(viewModel: AyamKasViewModel) {
                     onEditTransaction = { viewModel.openForm(it) },
                     onToggleConfirm = { viewModel.toggleConfirm(it) },
                     onDeleteTransaction = { viewModel.deleteTransaction(it) },
+                    onPrintTransaction = { tx ->
+                        printTransactionReceipt(
+                            context = context,
+                            transaction = tx,
+                            companyName = companyName,
+                            companyAddress = companyAddress,
+                            companyPhone = companyPhone,
+                            companyEmail = companyEmail,
+                            companyTaxId = companyTaxId,
+                            companyLogoUri = companyLogoUri,
+                            companyBannerUri = companyBannerUri
+                        )
+                    },
                     onConfirmAllDrafts = { viewModel.confirmAllDrafts() }
                 )
 
@@ -399,27 +557,38 @@ fun AyamKasApp(viewModel: AyamKasViewModel) {
                     cashBalances = cashAccountBalances,
                     cashFlows = cashFlows,
                     loans = externalLoans,
-                    onSaveCashFlow = { viewModel.saveCashFlow(it) },
-                    onSaveLoan = { viewModel.saveExternalLoan(it) }
+                    onSaveCashFlow = { flow, onSaved -> viewModel.saveCashFlow(flow, onSaved) },
+                    onSaveLoan = { loan, onSaved -> viewModel.saveExternalLoan(loan, onSaved) }
                 )
 
                 AyamNavTab.WORKFORCE -> WorkforceScreen(
                     employees = employees,
                     attendance = attendance,
                     payroll = payroll,
-                    onSaveEmployee = { viewModel.saveEmployee(it) },
-                    onSaveAttendance = { viewModel.saveAttendance(it) },
-                    onSavePayroll = { viewModel.savePayroll(it) }
+                    onSaveEmployee = { record, onSaved -> viewModel.saveEmployee(record, onSaved) },
+                    onSaveAttendance = { record, onSaved -> viewModel.saveAttendance(record, onSaved) },
+                    onSavePayroll = { record, onSaved -> viewModel.savePayroll(record, onSaved) }
                 )
 
                 AyamNavTab.SETTINGS -> BusinessSettingsScreen(
                     companyName = companyName,
                     companyLogoUri = companyLogoUri,
+                    companyBannerUri = companyBannerUri,
+                    companyAddress = companyAddress,
+                    companyPhone = companyPhone,
+                    companyEmail = companyEmail,
+                    companyTaxId = companyTaxId,
                     themeMode = viewModel.themeMode.value,
-                    onSave = { name, mode -> viewModel.saveBusinessSettings(name, mode) },
+                    onSave = { name, address, phone, email, taxId, mode ->
+                        viewModel.saveBusinessSettings(name, address, phone, email, taxId, mode)
+                    },
                     onChooseLogo = { logoPicker.launch(arrayOf("image/*")) },
-                    onRemoveLogo = { viewModel.saveCompanyLogoUri("") }
+                    onRemoveLogo = { viewModel.saveCompanyLogoUri("") },
+                    onChooseBanner = { bannerPicker.launch(arrayOf("image/*")) },
+                    onRemoveBanner = { viewModel.saveCompanyBannerUri("") }
                 )
+
+                AyamNavTab.AUDIT -> AuditLogScreen(entries = auditLog)
 
                 AyamNavTab.TOOLS -> ToolsBackupScreen(
                     onExportJson = { viewModel.exportJson(context) },

@@ -1,6 +1,8 @@
 package com.example.data.repository
 
+import androidx.room.withTransaction
 import com.example.data.local.AyamKasDao
+import com.example.data.local.KasDatabase
 import com.example.data.local.BusinessLedgerDao
 import com.example.data.model.AyamTransaction
 import com.example.data.model.CashTransaction
@@ -9,6 +11,7 @@ import com.example.data.model.ExternalLoan
 import com.example.data.model.EmployeeRecord
 import com.example.data.model.AttendanceRecord
 import com.example.data.model.PayrollRecord
+import com.example.data.model.TransactionAuditLog
 import com.example.data.model.AyamTransactionType
 import com.example.data.model.AyamKasFormatters
 import com.example.data.model.AyamKasCalculator
@@ -31,6 +34,7 @@ data class CloudSyncStats(
 )
 
 class AyamKasRepository(
+    private val database: KasDatabase,
     private val dao: AyamKasDao,
     private val businessDao: BusinessLedgerDao
 ) {
@@ -43,13 +47,60 @@ class AyamKasRepository(
     val employees: Flow<List<EmployeeRecord>> = businessDao.observeEmployees()
     val attendance: Flow<List<AttendanceRecord>> = businessDao.observeAttendance()
     val payroll: Flow<List<PayrollRecord>> = businessDao.observePayroll()
+    val auditLog: Flow<List<TransactionAuditLog>> = businessDao.observeAuditLog()
 
     suspend fun saveTransaction(tx: AyamTransaction) {
         // Enforce rules in the repository too, so UI paths cannot bypass validation.
         if (tx.isConfirmed) validateForConfirmation(tx)
+        val before = dao.getTransactionById(tx.id)
         val saved = tx.copy(updatedAt = nowIso())
-        dao.insertTransaction(saved)
-        updateCashMirror(saved)
+        val action = when {
+            before == null -> "BUAT"
+            before.status != saved.status -> if (saved.isConfirmed) "KONFIRMASI" else "KEMBALI_DRAF"
+            else -> "UBAH"
+        }
+        // Transaction, cash mirror, and audit must commit together. Never leave a
+        // saved transaction without its audit event if any write fails.
+        database.withTransaction {
+            dao.insertTransaction(saved)
+            updateCashMirror(saved)
+            appendTransactionAudit(action, before, saved)
+        }
+    }
+
+    private fun transactionAuditSummary(tx: AyamTransaction?): String {
+        if (tx == null) return "—"
+        return listOf(
+            "Tanggal=${tx.date}",
+            "Ref=${tx.ref.ifBlank { "—" }}",
+            "Jenis=${AyamTransactionType.fromKey(tx.type).label}",
+            "Nominal=${AyamKasFormatters.formatRupiah(tx.amount)}",
+            "Kas aktual=${tx.paidAmount?.let(AyamKasFormatters::formatRupiah) ?: "belum diisi"}",
+            "Status=${if (tx.isConfirmed) "Terverifikasi" else "Draf"}",
+            "DO=${tx.batchRef.ifBlank { "—" }}"
+        ).joinToString(" · ")
+    }
+
+    private suspend fun appendTransactionAudit(
+        action: String,
+        before: AyamTransaction?,
+        after: AyamTransaction?,
+        note: String = ""
+    ) {
+        val tx = after ?: before ?: return
+        businessDao.appendAuditLog(
+            TransactionAuditLog(
+                id = "AUD-${java.util.UUID.randomUUID()}",
+                entityType = "TRANSAKSI",
+                entityId = tx.id,
+                action = action,
+                occurredAt = nowIso(),
+                actor = "Perangkat ini",
+                summary = note.ifBlank { "${action}: ${tx.description}" },
+                beforeData = transactionAuditSummary(before),
+                afterData = transactionAuditSummary(after)
+            )
+        )
     }
 
     private suspend fun updateCashMirror(tx: AyamTransaction) {
@@ -169,31 +220,55 @@ class AyamKasRepository(
         BusinessLedgerCalculator.workedHours(clockIn, clockOut, breakMinutes)
 
     suspend fun savePayroll(record: PayrollRecord) {
+        require(record.period.matches(Regex("\\d{4}-(0[1-9]|1[0-2])"))) { "Periode payroll harus YYYY-MM yang valid" }
         require(record.daysPresent >= 0.0 && record.overtimeHours >= 0.0) { "Hari hadir/jam lembur tidak boleh negatif" }
-        require(record.deductions >= 0.0 && record.paidAmount >= 0.0 && record.paidAmount <= record.totalPay) { "Potongan/pembayaran tidak valid" }
-        require(record.totalPay >= 0.0) { "Total upah tidak boleh negatif" }
-        val saved = record.copy(updatedAt = nowIso())
-        businessDao.savePayroll(saved)
-        // Approved payroll becomes one linked expense row. The actual paid amount,
-        // not the whole payroll value, is the cash movement.
-        val periodDate = if (saved.period.length == 7) "${saved.period}-01" else saved.period
-        saveTransaction(
-            AyamTransaction(
-                id = "PAYROLL-${saved.id}",
-                date = periodDate,
-                ref = "PAY-${saved.period}-${saved.employeeId}",
-                type = "expense",
-                category = "Gaji",
-                description = "Upah ${saved.employeeName} periode ${saved.period}",
-                amount = saved.totalPay,
-                paidAmount = saved.paidAmount,
-                notes = "Rekap payroll ${saved.id}. ${saved.notes}",
-                status = if (saved.status == "DRAFT") "draft" else "confirmed",
-                source = "payroll",
-                paymentMethod = saved.paymentMethod,
-                cashAccount = saved.cashAccount
-            )
+        require(record.deductions >= 0.0 && record.paidAmount >= 0.0) { "Potongan/pembayaran tidak boleh negatif" }
+        require(record.status in setOf("DRAFT", "APPROVED", "PART_PAID", "PAID")) { "Status payroll tidak valid" }
+        val employee = businessDao.getEmployee(record.employeeId)
+            ?: throw IllegalArgumentException("Master karyawan tidak ditemukan")
+        val amounts = BusinessLedgerCalculator.calculatePayroll(
+            daysPresent = record.daysPresent,
+            dailyRate = record.dailyRate,
+            overtimeHours = record.overtimeHours,
+            overtimeRatePerHour = employee.overtimeRatePerHour,
+            allowance = record.allowance,
+            deductions = record.deductions
         )
+        require(amounts.totalPay >= 0.0) { "Total gaji setelah potongan tidak boleh negatif" }
+        require(record.paidAmount <= amounts.totalPay) { "Pembayaran melebihi total gaji yang dihitung ulang" }
+        if (record.status != "DRAFT") {
+            require(amounts.totalPay > 0.0) { "Total gaji harus lebih dari nol sebelum disetujui" }
+        }
+
+        // The repository is authoritative for pay math; do not trust totals sent by the UI.
+        val saved = record.copy(
+            basePay = amounts.basePay,
+            overtimePay = amounts.overtimePay,
+            allowance = amounts.allowance,
+            deductions = amounts.deductions,
+            totalPay = amounts.totalPay,
+            updatedAt = nowIso()
+        )
+        val periodDate = "${saved.period}-01"
+        val payrollTransaction = AyamTransaction(
+            id = "PAYROLL-${saved.id}",
+            date = periodDate,
+            ref = "PAY-${saved.period}-${saved.employeeId}",
+            type = "expense",
+            category = "Gaji",
+            description = "Upah ${saved.employeeName} periode ${saved.period}",
+            amount = saved.totalPay,
+            paidAmount = saved.paidAmount,
+            notes = "Rekap payroll ${saved.id}. ${saved.notes}",
+            status = if (saved.status == "DRAFT") "draft" else "confirmed",
+            source = "payroll",
+            paymentMethod = saved.paymentMethod,
+            cashAccount = saved.cashAccount
+        )
+        database.withTransaction {
+            businessDao.savePayroll(saved)
+            saveTransaction(payrollTransaction)
+        }
     }
 
     suspend fun toggleConfirm(id: String, currentStatus: String) {
@@ -201,20 +276,26 @@ class AyamKasRepository(
         val confirming = currentStatus != "confirmed"
         if (confirming) validateForConfirmation(current)
         val saved = current.copy(status = if (confirming) "confirmed" else "draft", updatedAt = nowIso())
-        dao.insertTransaction(saved)
-        updateCashMirror(saved)
+        database.withTransaction {
+            dao.insertTransaction(saved)
+            updateCashMirror(saved)
+            appendTransactionAudit(if (confirming) "KONFIRMASI" else "KEMBALI_DRAF", current, saved)
+        }
     }
 
     suspend fun confirmTransaction(id: String) {
         val current = dao.getTransactionById(id) ?: throw IllegalArgumentException("Transaksi tidak ditemukan")
         validateForConfirmation(current)
         val saved = current.copy(status = "confirmed", updatedAt = nowIso())
-        dao.insertTransaction(saved)
-        updateCashMirror(saved)
+        database.withTransaction {
+            dao.insertTransaction(saved)
+            updateCashMirror(saved)
+            appendTransactionAudit("KONFIRMASI", current, saved)
+        }
     }
 
     private suspend fun validateForConfirmation(tx: AyamTransaction) {
-        require(tx.date.matches(Regex("\\d{4}-\\d{2}-\\d{2}"))) { "Tanggal harus berformat YYYY-MM-DD" }
+        require(AyamKasFormatters.isValidIsoDate(tx.date)) { "Tanggal tidak valid. Pilih tanggal nyata dengan format YYYY-MM-DD." }
         require(tx.amount > 0.0) { "Nominal harus lebih dari nol" }
         if (tx.type in listOf("sale", "purchase", "expense")) {
             require(tx.paidAmount != null && tx.paidAmount >= 0.0 && tx.paidAmount <= tx.amount) {
@@ -410,19 +491,22 @@ class AyamKasRepository(
             status = tx.status,
             source = tx.source
         )
-        dao.insertDeleted(deleted.copy(
-            paymentMethod = tx.paymentMethod,
-            cashAccount = tx.cashAccount,
-            supplier = tx.supplier,
-            weightLossKg = tx.weightLossKg,
-            mortalityRatePct = tx.mortalityRatePct,
-            fcr = tx.fcr,
-            weightGainKg = tx.weightGainKg,
-            feedPricePerKg = tx.feedPricePerKg,
-            processingCost = tx.processingCost
-        ))
-        dao.deleteTransaction(tx.id)
-        businessDao.deleteCashForSource(tx.id)
+        database.withTransaction {
+            dao.insertDeleted(deleted.copy(
+                paymentMethod = tx.paymentMethod,
+                cashAccount = tx.cashAccount,
+                supplier = tx.supplier,
+                weightLossKg = tx.weightLossKg,
+                mortalityRatePct = tx.mortalityRatePct,
+                fcr = tx.fcr,
+                weightGainKg = tx.weightGainKg,
+                feedPricePerKg = tx.feedPricePerKg,
+                processingCost = tx.processingCost
+            ))
+            dao.deleteTransaction(tx.id)
+            businessDao.deleteCashForSource(tx.id)
+            appendTransactionAudit("HAPUS_ARSIP", tx, null, "Transaksi dihapus ke arsip: ${tx.description}")
+        }
     }
 
     suspend fun restoreDeleted(deleted: DeletedAyamTransaction) {
@@ -440,9 +524,7 @@ class AyamKasRepository(
             notes = deleted.notes,
             status = deleted.status,
             source = deleted.source,
-            updatedAt = nowIso()
-        )
-        saveTransaction(restored.copy(
+            updatedAt = nowIso(),
             paymentMethod = deleted.paymentMethod,
             cashAccount = deleted.cashAccount,
             supplier = deleted.supplier,
@@ -452,44 +534,64 @@ class AyamKasRepository(
             weightGainKg = deleted.weightGainKg,
             feedPricePerKg = deleted.feedPricePerKg,
             processingCost = deleted.processingCost
-        ))
-        dao.deleteDeleted(deleted.id)
+        )
+        if (restored.isConfirmed) validateForConfirmation(restored)
+        database.withTransaction {
+            dao.insertTransaction(restored)
+            updateCashMirror(restored)
+            appendTransactionAudit(
+                "PULIHKAN_ARSIP",
+                before = null,
+                after = restored,
+                note = "Transaksi dipulihkan dari arsip: ${restored.description}"
+            )
+            dao.deleteDeleted(deleted.id)
+        }
     }
 
     suspend fun clearAll() {
         val now = nowIso()
-        dao.getAllTransactions().first().forEach { tx ->
-            dao.insertDeleted(
-                DeletedAyamTransaction(
-                    id = "DEL-${tx.id}",
-                    originalId = tx.id,
-                    deletedAt = now,
-                    date = tx.date,
-                    ref = tx.ref,
-                    type = tx.type,
-                    category = tx.category,
-                    description = tx.description,
-                    amount = tx.amount,
-                    paidAmount = tx.paidAmount,
-                    qtyKg = tx.qtyKg,
-                    batchRef = tx.batchRef,
-                    notes = tx.notes,
-                    status = tx.status,
-                    source = tx.source,
-                    paymentMethod = tx.paymentMethod,
-                    cashAccount = tx.cashAccount,
-                    supplier = tx.supplier,
-                    weightLossKg = tx.weightLossKg,
-                    mortalityRatePct = tx.mortalityRatePct,
-                    fcr = tx.fcr,
-                    weightGainKg = tx.weightGainKg,
-                    feedPricePerKg = tx.feedPricePerKg,
-                    processingCost = tx.processingCost
+        val transactions = dao.getAllTransactions().first()
+        database.withTransaction {
+            transactions.forEach { tx ->
+                dao.insertDeleted(
+                    DeletedAyamTransaction(
+                        id = "DEL-${tx.id}",
+                        originalId = tx.id,
+                        deletedAt = now,
+                        date = tx.date,
+                        ref = tx.ref,
+                        type = tx.type,
+                        category = tx.category,
+                        description = tx.description,
+                        amount = tx.amount,
+                        paidAmount = tx.paidAmount,
+                        qtyKg = tx.qtyKg,
+                        batchRef = tx.batchRef,
+                        notes = tx.notes,
+                        status = tx.status,
+                        source = tx.source,
+                        paymentMethod = tx.paymentMethod,
+                        cashAccount = tx.cashAccount,
+                        supplier = tx.supplier,
+                        weightLossKg = tx.weightLossKg,
+                        mortalityRatePct = tx.mortalityRatePct,
+                        fcr = tx.fcr,
+                        weightGainKg = tx.weightGainKg,
+                        feedPricePerKg = tx.feedPricePerKg,
+                        processingCost = tx.processingCost
+                    )
                 )
-            )
+                appendTransactionAudit(
+                    "ARSIP_MASSAL",
+                    before = tx,
+                    after = null,
+                    note = "Transaksi dipindahkan ke arsip massal: ${tx.description}"
+                )
+            }
+            dao.clearAll()
+            businessDao.clearMirroredCashTransactions()
         }
-        dao.clearAll()
-        businessDao.clearMirroredCashTransactions()
     }
 
     fun generateJsonExport(

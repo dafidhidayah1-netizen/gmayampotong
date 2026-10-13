@@ -14,6 +14,7 @@ import com.example.data.model.ExternalLoan
 import com.example.data.model.EmployeeRecord
 import com.example.data.model.AttendanceRecord
 import com.example.data.model.PayrollRecord
+import com.example.data.model.TransactionAuditLog
 
 @Database(
     entities = [
@@ -24,9 +25,10 @@ import com.example.data.model.PayrollRecord
         ExternalLoan::class,
         EmployeeRecord::class,
         AttendanceRecord::class,
-        PayrollRecord::class
+        PayrollRecord::class,
+        TransactionAuditLog::class
     ],
-    version = 8,
+    version = 9,
     exportSchema = false
 )
 abstract class KasDatabase : RoomDatabase() {
@@ -34,6 +36,19 @@ abstract class KasDatabase : RoomDatabase() {
     abstract fun businessLedgerDao(): BusinessLedgerDao
 
     companion object {
+        private val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // Append-only audit survives transaction deletion and status changes.
+                db.execSQL("""CREATE TABLE IF NOT EXISTS transaction_audit_log (
+                    id TEXT NOT NULL, entityType TEXT NOT NULL, entityId TEXT NOT NULL,
+                    action TEXT NOT NULL, occurredAt TEXT NOT NULL, actor TEXT NOT NULL,
+                    summary TEXT NOT NULL, beforeData TEXT NOT NULL, afterData TEXT NOT NULL,
+                    PRIMARY KEY(id))""")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_transaction_audit_log_entityId ON transaction_audit_log(entityId)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_transaction_audit_log_occurredAt ON transaction_audit_log(occurredAt)")
+            }
+        }
+
         private val MIGRATION_7_8 = object : Migration(7, 8) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE external_loans ADD COLUMN loanReference TEXT NOT NULL DEFAULT ''")
@@ -148,7 +163,7 @@ abstract class KasDatabase : RoomDatabase() {
                     context.applicationContext,
                     KasDatabase::class.java,
                     "ayamkas_pro_real.db"
-                ).addMigrations(MIGRATION_6_7, MIGRATION_7_8).build()
+                ).addMigrations(MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9).build()
                 INSTANCE = instance
                 instance
             }

@@ -4,6 +4,8 @@ import androidx.room.Entity
 import androidx.room.PrimaryKey
 import java.text.DecimalFormat
 import java.text.DecimalFormatSymbols
+import java.text.SimpleDateFormat
+import java.text.ParsePosition
 import java.util.Locale
 
 @Entity(tableName = "ayam_transactions")
@@ -172,6 +174,15 @@ object AyamKasFormatters {
 
     fun formatNumber(value: Double): String {
         return numberFormat.format(value)
+    }
+
+    /** Strict calendar validation without requiring Android API 26 java.time support. */
+    fun isValidIsoDate(value: String): Boolean {
+        if (!value.matches(Regex("\\d{4}-\\d{2}-\\d{2}"))) return false
+        val format = SimpleDateFormat("yyyy-MM-dd", Locale.ROOT).apply { isLenient = false }
+        val position = ParsePosition(0)
+        val parsed = format.parse(value, position)
+        return parsed != null && position.index == value.length
     }
 
     fun formatDate(isoDate: String): String {

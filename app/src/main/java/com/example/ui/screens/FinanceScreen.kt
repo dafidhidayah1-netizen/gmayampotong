@@ -49,8 +49,8 @@ fun FinanceScreen(
     cashBalances: Map<String, Double>,
     cashFlows: List<CashFlow>,
     loans: List<ExternalLoan>,
-    onSaveCashFlow: (CashFlow) -> Unit,
-    onSaveLoan: (ExternalLoan) -> Unit,
+    onSaveCashFlow: (CashFlow, () -> Unit) -> Unit,
+    onSaveLoan: (ExternalLoan, () -> Unit) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val today = remember { SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date()) }
@@ -63,6 +63,7 @@ fun FinanceScreen(
     var fromMenu by remember { mutableStateOf(false) }
     var toMenu by remember { mutableStateOf(false) }
     var confirmedTransfer by remember { mutableStateOf(true) }
+    var transferError by remember { mutableStateOf("") }
 
     var loanDate by remember { mutableStateOf(today) }
     var party by remember { mutableStateOf("") }
@@ -77,8 +78,23 @@ fun FinanceScreen(
     var loanDirectionMenu by remember { mutableStateOf(false) }
     var loanAccountMenu by remember { mutableStateOf(false) }
     var confirmedLoan by remember { mutableStateOf(true) }
+    var loanError by remember { mutableStateOf("") }
 
     val accounts = listOf("DOMPET", "ATM/BANK", "QRIS")
+    val loanTypeLabels = linkedMapOf(
+        "OWNER_LOAN" to "Pinjaman dari pemilik",
+        "BUSINESS_BORROWING" to "Pinjaman usaha dari pihak lain",
+        "BUSINESS_LENDING" to "Pinjaman usaha ke pihak lain",
+        "OWNER_PERSONAL" to "Pengeluaran pribadi pemilik",
+        "UNEXPECTED_COST" to "Pengeluaran lain di luar operasional",
+        "OWNER_INJECTION" to "Tambahan modal pemilik"
+    )
+    val directionLabels = linkedMapOf(
+        "RECEIVED" to "Dana diterima",
+        "REPAYMENT" to "Bayar angsuran / pelunasan",
+        "GIVEN" to "Dana diberikan / dikeluarkan",
+        "COLLECTION" to "Terima angsuran / penagihan"
+    )
     val loanDirectionOptions = when (loanType) {
         "OWNER_LOAN", "BUSINESS_BORROWING" -> listOf("RECEIVED", "REPAYMENT")
         "BUSINESS_LENDING" -> listOf("GIVEN", "COLLECTION")
@@ -136,6 +152,7 @@ fun FinanceScreen(
             Card(shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
                 Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text("Transfer antar rekening", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Text("Contoh: pindah uang dari ATM ke dompet. Ini bukan pemasukan atau biaya baru.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     OutlinedTextField(value = date, onValueChange = { date = it }, label = { Text("Tanggal (YYYY-MM-DD)") }, modifier = Modifier.fillMaxWidth().testTag("input_cashflow_date"), singleLine = true)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                         Column(Modifier.weight(1f)) {
@@ -160,11 +177,26 @@ fun FinanceScreen(
                         androidx.compose.material3.Checkbox(checked = confirmedTransfer, onCheckedChange = { confirmedTransfer = it }, modifier = Modifier.testTag("checkbox_confirm_cashflow"))
                         Text("Transfer sudah diverifikasi", style = MaterialTheme.typography.bodySmall)
                     }
+                    if (transferError.isNotBlank()) {
+                        Text(transferError, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag("label_cashflow_error"))
+                    }
                     Button(onClick = {
-                        val amount = amountText.toDoubleOrNull() ?: 0.0
-                        if (date.length == 10 && amount > 0 && fromAccount != toAccount) {
-                            onSaveCashFlow(CashFlow(UUID.randomUUID().toString(), date, fromAccount, toAccount, amount, reference.trim(), transferNotes.trim(), if (confirmedTransfer) "confirmed" else "draft", ""))
-                            amountText = ""; reference = ""; transferNotes = ""
+                        val amount = amountText.toDoubleOrNull()
+                        transferError = when {
+                            !com.example.data.model.AyamKasFormatters.isValidIsoDate(date) -> "Tanggal transfer tidak valid."
+                            amount == null || amount <= 0.0 -> "Masukkan nominal transfer lebih dari Rp0."
+                            fromAccount == toAccount -> "Akun asal dan tujuan harus berbeda."
+                            else -> ""
+                        }
+                        if (transferError.isBlank() && amount != null) {
+                            onSaveCashFlow(
+                                CashFlow(UUID.randomUUID().toString(), date, fromAccount, toAccount, amount, reference.trim(), transferNotes.trim(), if (confirmedTransfer) "confirmed" else "draft", "")
+                            ) {
+                                amountText = ""
+                                reference = ""
+                                transferNotes = ""
+                                transferError = ""
+                            }
                         }
                     }, modifier = Modifier.fillMaxWidth().testTag("btn_save_cashflow")) { Text("Simpan Transfer") }
                 }
@@ -183,11 +215,11 @@ fun FinanceScreen(
                         supportingText = { Text("Gunakan referensi yang sama untuk pencairan dan setiap angsuran agar sisa pinjaman dihitung akurat.") },
                         modifier = Modifier.fillMaxWidth().testTag("input_loan_reference"), singleLine = true
                     )
-                    Text("Kategori")
-                    OutlinedButton(onClick = { loanTypeMenu = true }, modifier = Modifier.fillMaxWidth().testTag("select_loan_type")) { Text(loanType) }
+                    Text("Jenis transaksi")
+                    OutlinedButton(onClick = { loanTypeMenu = true }, modifier = Modifier.fillMaxWidth().testTag("select_loan_type")) { Text(loanTypeLabels[loanType] ?: loanType) }
                     DropdownMenu(expanded = loanTypeMenu, onDismissRequest = { loanTypeMenu = false }) {
                         listOf("OWNER_LOAN", "BUSINESS_BORROWING", "BUSINESS_LENDING", "OWNER_PERSONAL", "UNEXPECTED_COST", "OWNER_INJECTION").forEach { a ->
-                            DropdownMenuItem(text = { Text(a) }, onClick = {
+                            DropdownMenuItem(text = { Text(loanTypeLabels[a] ?: a) }, onClick = {
                                 loanType = a
                                 val allowed = when (a) {
                                     "OWNER_LOAN", "BUSINESS_BORROWING" -> listOf("RECEIVED", "REPAYMENT")
@@ -201,10 +233,10 @@ fun FinanceScreen(
                         }
                     }
                     Text("Arah kas")
-                    OutlinedButton(onClick = { loanDirectionMenu = true }, modifier = Modifier.fillMaxWidth().testTag("select_loan_direction")) { Text(direction) }
+                    OutlinedButton(onClick = { loanDirectionMenu = true }, modifier = Modifier.fillMaxWidth().testTag("select_loan_direction")) { Text(directionLabels[direction] ?: direction) }
                     DropdownMenu(expanded = loanDirectionMenu, onDismissRequest = { loanDirectionMenu = false }) {
                         loanDirectionOptions.forEach { a ->
-                            DropdownMenuItem(text = { Text(a) }, onClick = { direction = a; loanDirectionMenu = false })
+                            DropdownMenuItem(text = { Text(directionLabels[a] ?: a) }, onClick = { direction = a; loanDirectionMenu = false })
                         }
                     }
                     OutlinedTextField(value = loanAmount, onValueChange = { loanAmount = it.filter(Char::isDigit) }, label = { Text("Nominal peristiwa kas (Rp)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.fillMaxWidth().testTag("input_loan_amount"), singleLine = true)
@@ -219,19 +251,36 @@ fun FinanceScreen(
                         androidx.compose.material3.Checkbox(checked = confirmedLoan, onCheckedChange = { confirmedLoan = it }, modifier = Modifier.testTag("checkbox_confirm_loan"))
                         Text("Peristiwa kas diverifikasi", style = MaterialTheme.typography.bodySmall)
                     }
+                    if (loanError.isNotBlank()) {
+                        Text(loanError, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag("label_loan_error"))
+                    }
                     Button(onClick = {
-                        val amount = loanAmount.toDoubleOrNull() ?: 0.0
+                        val amount = loanAmount.toDoubleOrNull()
                         val balanceTracked = loanType in listOf("OWNER_LOAN", "BUSINESS_BORROWING", "BUSINESS_LENDING")
-                        if (loanDate.length == 10 && party.isNotBlank() && amount > 0.0 &&
-                            (!balanceTracked || loanReference.isNotBlank()) &&
-                            (direction !in listOf("REPAYMENT", "COLLECTION") || loanReference.isNotBlank())
-                        ) {
-                            onSaveLoan(ExternalLoan(
-                                UUID.randomUUID().toString(), loanDate, party.trim(), loanReference.trim(),
-                                loanType, direction, amount, amount, dueDate, loanAccount, loanNotes.trim(),
-                                if (confirmedLoan) "confirmed" else "draft", ""
-                            ))
-                            party = ""; loanReference = ""; loanAmount = ""; dueDate = ""; loanNotes = ""
+                        loanError = when {
+                            !com.example.data.model.AyamKasFormatters.isValidIsoDate(loanDate) -> "Tanggal pinjaman tidak valid."
+                            party.isBlank() -> "Isi nama pihak atau sumber dana."
+                            amount == null || amount <= 0.0 -> "Masukkan nominal lebih dari Rp0."
+                            dueDate.isNotBlank() && !com.example.data.model.AyamKasFormatters.isValidIsoDate(dueDate) -> "Tanggal jatuh tempo tidak valid."
+                            balanceTracked && loanReference.isBlank() -> "Isi referensi pinjaman agar saldo utang/piutang bisa dihitung."
+                            direction in listOf("REPAYMENT", "COLLECTION") && loanReference.isBlank() -> "Angsuran harus merujuk pinjaman asal."
+                            else -> ""
+                        }
+                        if (loanError.isBlank() && amount != null) {
+                            onSaveLoan(
+                                ExternalLoan(
+                                    UUID.randomUUID().toString(), loanDate, party.trim(), loanReference.trim(),
+                                    loanType, direction, amount, amount, dueDate, loanAccount, loanNotes.trim(),
+                                    if (confirmedLoan) "confirmed" else "draft", ""
+                                )
+                            ) {
+                                party = ""
+                                loanReference = ""
+                                loanAmount = ""
+                                dueDate = ""
+                                loanNotes = ""
+                                loanError = ""
+                            }
                         }
                     }, modifier = Modifier.fillMaxWidth().testTag("btn_save_loan")) { Text("Simpan Catatan Kas") }
                 }

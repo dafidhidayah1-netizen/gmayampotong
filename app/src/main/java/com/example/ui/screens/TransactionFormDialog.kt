@@ -50,6 +50,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.example.data.model.AyamTransaction
+import com.example.data.model.AyamKasFormatters
 import com.example.data.model.AyamTransactionType
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -101,7 +102,7 @@ fun TransactionFormDialog(
     }
     var batchRef by remember { mutableStateOf(transaction?.batchRef ?: "") }
     var notes by remember { mutableStateOf(transaction?.notes ?: "") }
-    var isConfirmed by remember { mutableStateOf(transaction?.isConfirmed ?: true) }
+    var isConfirmed by remember { mutableStateOf(transaction?.isConfirmed ?: false) }
     var paymentMethod by remember { mutableStateOf(transaction?.paymentMethod ?: "CASH") }
     var cashAccount by remember { mutableStateOf(transaction?.cashAccount ?: "DOMPET") }
 
@@ -500,12 +501,12 @@ fun TransactionFormDialog(
                     Spacer(modifier = Modifier.width(8.dp))
                     Column {
                         Text(
-                            text = "Konfirmasi transaksi dan masukkan ke laporan",
+                            text = if (isConfirmed) "Verifikasi sekarang dan masukkan ke laporan" else "Simpan cepat sebagai draf",
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.SemiBold
                         )
                         Text(
-                            text = "Jika masih draf atau belum pasti, hilangkan centang.",
+                            text = if (isConfirmed) "Data harus lengkap dan valid agar memengaruhi saldo dan laporan." else "Bisa disimpan dulu; lengkapi pembayaran/DO dan verifikasi nanti.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -525,17 +526,21 @@ fun TransactionFormDialog(
                     Spacer(modifier = Modifier.width(10.dp))
                     Button(
                         onClick = {
+                            if (!AyamKasFormatters.isValidIsoDate(date)) {
+                                errorMessage = "Tanggal tidak valid. Gunakan tanggal nyata dengan format YYYY-MM-DD."
+                                return@Button
+                            }
                             val amt = amountText.toDoubleOrNull()
                             if (amt == null || amt <= 0.0) {
                                 errorMessage = "Nominal transaksi harus lebih dari nol."
                                 return@Button
                             }
                             val paidAmt = if (isCashOnly) amt else paidAmountText.toDoubleOrNull()
-                            if (paidAmt == null || paidAmt < 0.0) {
-                                errorMessage = "Nominal yang dibayar/diterima wajib diisi (boleh 0)."
+                            if (isConfirmed && (paidAmt == null || paidAmt < 0.0)) {
+                                errorMessage = "Untuk verifikasi, isi nominal kas aktual (boleh Rp0 jika kredit)."
                                 return@Button
                             }
-                            if (paidAmt > amt && (type == "sale" || type == "purchase" || type == "expense")) {
+                            if (paidAmt != null && paidAmt > amt && (type == "sale" || type == "purchase" || type == "expense")) {
                                 errorMessage = "Pembayaran tunai tidak boleh melebihi nominal transaksi."
                                 return@Button
                             }

@@ -23,6 +23,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -44,25 +46,31 @@ import java.util.Date
 import java.util.Locale
 import java.util.UUID
 
+private fun isValidClockTime(value: String): Boolean =
+    Regex("(?:[01]\\d|2[0-3]):[0-5]\\d").matches(value)
+
 @Composable
 fun WorkforceScreen(
     employees: List<EmployeeRecord>,
     attendance: List<AttendanceRecord>,
     payroll: List<PayrollRecord>,
-    onSaveEmployee: (EmployeeRecord) -> Unit,
-    onSaveAttendance: (AttendanceRecord) -> Unit,
-    onSavePayroll: (PayrollRecord) -> Unit,
+    onSaveEmployee: (EmployeeRecord, () -> Unit) -> Unit,
+    onSaveAttendance: (AttendanceRecord, () -> Unit) -> Unit,
+    onSavePayroll: (PayrollRecord, () -> Unit) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val today = remember { SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date()) }
     val currentPeriod = remember { SimpleDateFormat("yyyy-MM", Locale.getDefault()).format(Date()) }
+    var activeSection by remember { mutableStateOf("employee") }
     var name by remember { mutableStateOf("") }
+    var employeeError by remember { mutableStateOf("") }
     var position by remember { mutableStateOf("") }
     var dailyRateText by remember { mutableStateOf("") }
     var standardHoursText by remember { mutableStateOf("8") }
-    var overtimeRateText by remember { mutableStateOf("") }
+    var overtimeRateText by remember { mutableStateOf("0") }
 
     var attendanceDate by remember { mutableStateOf(today) }
+    var attendanceError by remember { mutableStateOf("") }
     var attendanceEmployeeId by remember { mutableStateOf("") }
     var shiftName by remember { mutableStateOf("Pagi") }
     var clockIn by remember { mutableStateOf("") }
@@ -74,6 +82,7 @@ fun WorkforceScreen(
     var statusMenu by remember { mutableStateOf(false) }
 
     var payrollPeriod by remember { mutableStateOf(currentPeriod) }
+    var payrollError by remember { mutableStateOf("") }
     var payrollEmployeeId by remember { mutableStateOf("") }
     var payrollEmployeeMenu by remember { mutableStateOf(false) }
     var allowanceText by remember { mutableStateOf("0") }
@@ -120,6 +129,19 @@ fun WorkforceScreen(
             }
         }
         item {
+            TabRow(selectedTabIndex = when (activeSection) { "employee" -> 0; "attendance" -> 1; else -> 2 }) {
+                listOf("employee" to "Karyawan", "attendance" to "Absensi", "payroll" to "Payroll").forEach { pair ->
+                    Tab(
+                        selected = activeSection == pair.first,
+                        onClick = { activeSection = pair.first },
+                        text = { Text(pair.second) },
+                        modifier = Modifier.testTag("workforce_tab_${pair.first}")
+                    )
+                }
+            }
+        }
+        if (activeSection == "employee") {
+        item {
             Card(shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
                 Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text("Tambah karyawan", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
@@ -127,19 +149,38 @@ fun WorkforceScreen(
                     OutlinedTextField(value = position, onValueChange = { position = it }, label = { Text("Jabatan / bagian *") }, modifier = Modifier.fillMaxWidth().testTag("input_employee_position"), singleLine = true)
                     OutlinedTextField(value = dailyRateText, onValueChange = { dailyRateText = it.filter(Char::isDigit) }, label = { Text("Tarif per hari (Rp) *") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.fillMaxWidth().testTag("input_employee_daily_rate"), singleLine = true)
                     OutlinedTextField(value = standardHoursText, onValueChange = { standardHoursText = it }, label = { Text("Jam standar per shift *") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth().testTag("input_employee_standard_hours"), singleLine = true)
-                    OutlinedTextField(value = overtimeRateText, onValueChange = { overtimeRateText = it.filter(Char::isDigit) }, label = { Text("Tarif lembur per jam (Rp) *") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.fillMaxWidth().testTag("input_employee_overtime_rate"), singleLine = true)
+                    OutlinedTextField(value = overtimeRateText, onValueChange = { overtimeRateText = it.filter(Char::isDigit) }, label = { Text("Tarif lembur per jam (Rp; isi 0 jika tidak ada) *") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.fillMaxWidth().testTag("input_employee_overtime_rate"), singleLine = true)
+                    if (employeeError.isNotBlank()) {
+                        Text(employeeError, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag("label_employee_error"))
+                    }
                     Button(onClick = {
                         val rate = dailyRateText.toDoubleOrNull()
                         val standard = standardHoursText.toDoubleOrNull()
                         val overtimeRate = overtimeRateText.toDoubleOrNull()
-                        if (name.isNotBlank() && position.isNotBlank() && rate != null && rate >= 0 && standard != null && standard > 0 && overtimeRate != null && overtimeRate >= 0) {
-                            onSaveEmployee(EmployeeRecord(UUID.randomUUID().toString(), name.trim(), position.trim(), rate, standard, overtimeRate, true, ""))
-                            name = ""; position = ""; dailyRateText = ""; standardHoursText = "8"; overtimeRateText = ""
+                        employeeError = when {
+                            name.isBlank() -> "Nama karyawan wajib diisi."
+                            position.isBlank() -> "Isi jabatan atau bagian karyawan."
+                            rate == null || rate < 0.0 -> "Tarif harian harus angka nol atau lebih."
+                            standard == null || standard <= 0.0 -> "Jam standar shift harus lebih dari nol."
+                            overtimeRate == null || overtimeRate < 0.0 -> "Tarif lembur harus angka nol atau lebih."
+                            else -> ""
+                        }
+                        if (employeeError.isBlank() && rate != null && standard != null && overtimeRate != null) {
+                            onSaveEmployee(EmployeeRecord(UUID.randomUUID().toString(), name.trim(), position.trim(), rate, standard, overtimeRate, true, "")) {
+                                name = ""
+                                position = ""
+                                dailyRateText = ""
+                                standardHoursText = "8"
+                                overtimeRateText = "0"
+                                employeeError = ""
+                            }
                         }
                     }, modifier = Modifier.fillMaxWidth().testTag("btn_save_employee")) { Text("Simpan Karyawan") }
                 }
             }
         }
+        }
+        if (activeSection == "attendance") {
         item {
             Card(shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
                 Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -163,31 +204,49 @@ fun WorkforceScreen(
                     }
                     OutlinedTextField(value = attendanceNotes, onValueChange = { attendanceNotes = it }, label = { Text("Catatan") }, modifier = Modifier.fillMaxWidth(), minLines = 2)
                     Text("Jam lembur dihitung dari jam masuk/keluar dikurangi istirahat dan jam standar karyawan.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    if (attendanceError.isNotBlank()) {
+                        Text(attendanceError, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag("label_attendance_error"))
+                    }
                     Button(onClick = {
-                        if (attendanceEmployeeId.isNotBlank() && attendanceDate.length == 10 && (attendanceStatus != "PRESENT" || (clockIn.length == 5 && clockOut.length == 5)) ) {
+                        val breakMinutes = breakMinutesText.toIntOrNull()
+                        attendanceError = when {
+                            selectedAttendanceEmployee == null -> "Pilih karyawan terlebih dahulu."
+                            !AyamKasFormatters.isValidIsoDate(attendanceDate) -> "Tanggal absensi tidak valid."
+                            breakMinutes == null || breakMinutes < 0 -> "Istirahat harus angka nol atau lebih."
+                            attendanceStatus == "PRESENT" && !isValidClockTime(clockIn) -> "Jam masuk gunakan format HH:mm yang valid."
+                            attendanceStatus == "PRESENT" && !isValidClockTime(clockOut) -> "Jam keluar gunakan format HH:mm yang valid."
+                            else -> ""
+                        }
+                        if (attendanceError.isBlank() && selectedAttendanceEmployee != null && breakMinutes != null) {
                             val existing = attendance.firstOrNull { it.employeeId == attendanceEmployeeId && it.workDate == attendanceDate }
                             onSaveAttendance(
                                 AttendanceRecord(
                                     id = existing?.id ?: UUID.randomUUID().toString(),
                                     employeeId = attendanceEmployeeId,
-                                    employeeName = selectedAttendanceEmployee?.name.orEmpty(),
+                                    employeeName = selectedAttendanceEmployee.name,
                                     workDate = attendanceDate,
                                     shiftName = shiftName.trim(),
-                                    clockIn = clockIn,
-                                    clockOut = clockOut,
-                                    breakMinutes = breakMinutesText.toIntOrNull() ?: 0,
+                                    clockIn = if (attendanceStatus == "PRESENT") clockIn else "",
+                                    clockOut = if (attendanceStatus == "PRESENT") clockOut else "",
+                                    breakMinutes = breakMinutes,
                                     overtimeHours = 0.0,
                                     status = attendanceStatus,
                                     notes = attendanceNotes.trim(),
                                     updatedAt = ""
                                 )
-                            )
-                            clockIn = ""; clockOut = ""; attendanceNotes = ""
+                            ) {
+                                clockIn = ""
+                                clockOut = ""
+                                attendanceNotes = ""
+                                attendanceError = ""
+                            }
                         }
                     }, modifier = Modifier.fillMaxWidth().testTag("btn_save_attendance")) { Text("Simpan Absensi") }
                 }
             }
         }
+        }
+        if (activeSection == "payroll") {
         item {
             Card(shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
                 Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -247,8 +306,20 @@ fun WorkforceScreen(
                             Text("Jika belum disetujui, payroll tetap draf dan tidak masuk laporan laba.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
+                    if (payrollError.isNotBlank()) {
+                        Text(payrollError, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag("label_payroll_error"))
+                    }
                     Button(onClick = {
-                        if (selectedPayrollEmployee != null && payrollPeriod.length == 7 && daysPresent > 0 && allowance >= 0 && deductions >= 0 && paidNow >= 0 && paidNow <= totalPay && totalPay >= 0) {
+                        payrollError = when {
+                            selectedPayrollEmployee == null -> "Pilih karyawan terlebih dahulu."
+                            !Regex("\\d{4}-(0[1-9]|1[0-2])").matches(payrollPeriod) -> "Periode gunakan format YYYY-MM yang valid."
+                            daysPresent <= 0.0 -> "Belum ada absensi hadir untuk karyawan dan periode ini."
+                            allowance < 0.0 || deductions < 0.0 -> "Tunjangan dan potongan tidak boleh negatif."
+                            paidNow < 0.0 || paidNow > totalPay -> "Pembayaran harus di antara Rp0 dan total gaji."
+                            approvePayroll && totalPay <= 0.0 -> "Total gaji harus lebih dari Rp0 untuk disetujui."
+                            else -> ""
+                        }
+                        if (payrollError.isBlank() && selectedPayrollEmployee != null) {
                             val existing = payroll.firstOrNull { it.employeeId == payrollEmployeeId && it.period == payrollPeriod }
                             val status = if (!approvePayroll) "DRAFT" else when {
                                 paidNow <= 0.0 -> "APPROVED"
@@ -276,13 +347,18 @@ fun WorkforceScreen(
                                     notes = payrollNotes.trim(),
                                     updatedAt = ""
                                 )
-                            )
-                            payrollNotes = ""; approvePayroll = false
+                            ) {
+                                payrollNotes = ""
+                                approvePayroll = false
+                                payrollError = ""
+                            }
                         }
                     }, modifier = Modifier.fillMaxWidth().testTag("btn_save_payroll")) { Text("Simpan Payroll") }
                 }
             }
         }
+        }
+        if (activeSection == "attendance") {
         item { Text("Absensi terbaru", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold) }
         if (attendance.isEmpty()) item { Text("Belum ada absensi.") }
         else items(attendance.take(30), key = { it.id }) { row ->
@@ -295,6 +371,8 @@ fun WorkforceScreen(
                 }
             }
         }
+        }
+        if (activeSection == "payroll") {
         item { Text("Payroll tersimpan", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold) }
         if (payroll.isEmpty()) item { Text("Belum ada rekap payroll.") }
         else items(payroll.take(30), key = { it.id }) { row ->
@@ -306,6 +384,7 @@ fun WorkforceScreen(
                     if (row.notes.isNotBlank()) Text(row.notes, style = MaterialTheme.typography.bodySmall)
                 }
             }
+        }
         }
         item { Spacer(Modifier.height(24.dp)) }
     }

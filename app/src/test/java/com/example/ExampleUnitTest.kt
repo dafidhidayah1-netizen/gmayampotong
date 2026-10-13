@@ -6,6 +6,7 @@ import com.example.data.model.AyamTransaction
 import com.example.data.model.BusinessLedgerCalculator
 import com.example.data.model.ExternalLoan
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -297,6 +298,16 @@ class ExampleUnitTest {
         assertEquals(1000000.0, balance.principal, 0.001)
         assertEquals(250000.0, balance.settled, 0.001)
         assertEquals(750000.0, balance.outstanding, 0.001)
+    }
+
+    @Test
+    fun isoDateValidationRejectsImpossibleCalendarDates() {
+        assertTrue(AyamKasFormatters.isValidIsoDate("2024-02-29"))
+        assertTrue(AyamKasFormatters.isValidIsoDate("2026-10-14"))
+        assertFalse(AyamKasFormatters.isValidIsoDate("2026-02-29"))
+        assertFalse(AyamKasFormatters.isValidIsoDate("2026-13-01"))
+        assertFalse(AyamKasFormatters.isValidIsoDate("2026-1-01"))
+        assertFalse(AyamKasFormatters.isValidIsoDate("not-a-date"))
     }
 
     @Test
