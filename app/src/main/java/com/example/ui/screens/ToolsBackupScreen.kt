@@ -562,7 +562,7 @@ fun ToolsBackupScreen(
                     ) {
                         Icon(imageVector = Icons.Default.DeleteForever, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Hapus Semua Data Perangkat")
+                        Text("Arsipkan Semua Transaksi Aktif")
                     }
                 }
             }
@@ -642,9 +642,9 @@ fun ToolsBackupScreen(
     if (showResetDialog) {
         AlertDialog(
             onDismissRequest = { showResetDialog = false },
-            title = { Text("Konfirmasi Hapus Semua Data") },
+            title = { Text("Konfirmasi Arsip Transaksi") },
             text = {
-                Text("Yakin hapus semua transaksi di perangkat ini? Tindakan ini tidak bisa dibatalkan kecuali Anda memiliki file cadangan JSON.")
+                Text("Semua transaksi aktif akan dipindahkan ke arsip dan saldo dari transaksi aktif akan dihitung ulang. Data master, transfer, pinjaman, karyawan, absensi, dan payroll tidak ikut dihapus. Tetap buat cadangan JSON sebelum melanjutkan.")
             },
             confirmButton = {
                 Button(
@@ -654,7 +654,7 @@ fun ToolsBackupScreen(
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFB33C35))
                 ) {
-                    Text("Hapus Semuanya")
+                    Text("Arsipkan Transaksi")
                 }
             },
             dismissButton = {
