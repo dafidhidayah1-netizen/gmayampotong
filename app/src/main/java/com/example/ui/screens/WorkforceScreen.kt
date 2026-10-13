@@ -124,7 +124,7 @@ fun WorkforceScreen(
         }
         item {
             TabRow(selectedTabIndex = when (activeSection) { "employee" -> 0; "attendance" -> 1; else -> 2 }) {
-                listOf("employee" to "Karyawan", "attendance" to "Absensi", "payroll" to "Payroll").forEachIndexed { index, pair ->
+                listOf("employee" to "Karyawan", "attendance" to "Absensi", "payroll" to "Payroll").forEach { pair ->
                     Tab(
                         selected = activeSection == pair.first,
                         onClick = { activeSection = pair.first },
@@ -156,8 +156,8 @@ fun WorkforceScreen(
                 }
             }
         }
-        if (activeSection == "attendance") {
         }
+        if (activeSection == "attendance") {
         item {
             Card(shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
                 Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -206,8 +206,8 @@ fun WorkforceScreen(
                 }
             }
         }
-        if (activeSection == "payroll") {
         }
+        if (activeSection == "payroll") {
         item {
             Card(shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
                 Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -303,8 +303,8 @@ fun WorkforceScreen(
                 }
             }
         }
-        if (activeSection == "attendance") {
         }
+        if (activeSection == "attendance") {
         item { Text("Absensi terbaru", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold) }
         if (attendance.isEmpty()) item { Text("Belum ada absensi.") }
         else items(attendance.take(30), key = { it.id }) { row ->
@@ -317,8 +317,8 @@ fun WorkforceScreen(
                 }
             }
         }
-        if (activeSection == "payroll") {
         }
+        if (activeSection == "payroll") {
         item { Text("Payroll tersimpan", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold) }
         if (payroll.isEmpty()) item { Text("Belum ada rekap payroll.") }
         else items(payroll.take(30), key = { it.id }) { row ->
