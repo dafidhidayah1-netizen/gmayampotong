@@ -688,36 +688,39 @@ class AyamKasViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    fun saveEmployee(employee: EmployeeRecord) {
+    fun saveEmployee(employee: EmployeeRecord, onSaved: () -> Unit = {}) {
         viewModelScope.launch {
             runCatching { repository.saveEmployee(employee) }
                 .onSuccess {
                     scheduleAutoSync()
                     _userMessage.emit("Data karyawan tersimpan")
+                    onSaved()
                 }
-                .onFailure { _userMessage.emit(it.message ?: "Karyawan gagal disimpan") }
+                .onFailure { _userMessage.emit("Karyawan gagal disimpan: ${it.message ?: "periksa data"}. Input tetap dipertahankan.") }
         }
     }
 
-    fun saveAttendance(record: AttendanceRecord) {
+    fun saveAttendance(record: AttendanceRecord, onSaved: () -> Unit = {}) {
         viewModelScope.launch {
             runCatching { repository.saveAttendance(record) }
                 .onSuccess {
                     scheduleAutoSync()
                     _userMessage.emit("Absensi tersimpan")
+                    onSaved()
                 }
-                .onFailure { _userMessage.emit(it.message ?: "Absensi gagal disimpan") }
+                .onFailure { _userMessage.emit("Absensi gagal disimpan: ${it.message ?: "periksa data"}. Input tetap dipertahankan.") }
         }
     }
 
-    fun savePayroll(record: PayrollRecord) {
+    fun savePayroll(record: PayrollRecord, onSaved: () -> Unit = {}) {
         viewModelScope.launch {
             runCatching { repository.savePayroll(record) }
                 .onSuccess {
                     scheduleAutoSync()
                     _userMessage.emit("Rekap payroll tersimpan dan biaya gaji diposting ke buku usaha")
+                    onSaved()
                 }
-                .onFailure { _userMessage.emit(it.message ?: "Payroll gagal disimpan") }
+                .onFailure { _userMessage.emit("Payroll gagal disimpan: ${it.message ?: "periksa data"}. Input tetap dipertahankan.") }
         }
     }
 
