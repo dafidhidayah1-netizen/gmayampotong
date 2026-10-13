@@ -300,6 +300,16 @@ class ExampleUnitTest {
     }
 
     @Test
+    fun isoDateValidationRejectsImpossibleCalendarDates() {
+        assertTrue(AyamKasFormatters.isValidIsoDate("2024-02-29"))
+        assertTrue(AyamKasFormatters.isValidIsoDate("2026-10-14"))
+        assertFalse(AyamKasFormatters.isValidIsoDate("2026-02-29"))
+        assertFalse(AyamKasFormatters.isValidIsoDate("2026-13-01"))
+        assertFalse(AyamKasFormatters.isValidIsoDate("2026-1-01"))
+        assertFalse(AyamKasFormatters.isValidIsoDate("not-a-date"))
+    }
+
+    @Test
     fun testDateFormatting() {
         val formatted = AyamKasFormatters.formatDate("2026-10-10")
         assertEquals("10/10/2026", formatted)
