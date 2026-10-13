@@ -413,7 +413,7 @@ class AyamKasViewModel(application: Application) : AndroidViewModel(application)
         editingId: String? = null
     ) {
         val invalid = when {
-            date.isBlank() -> "Tanggal pembelian wajib diisi"
+            !AyamKasFormatters.isValidIsoDate(date) -> "Tanggal pembelian tidak valid. Gunakan tanggal nyata YYYY-MM-DD."
             doNumber.isBlank() -> "Nomor DO wajib diisi"
             supplier.isBlank() -> "Nama supplier wajib diisi"
             quantityKg <= 0.0 -> "Berat pembelian harus lebih dari nol"
@@ -459,9 +459,9 @@ class AyamKasViewModel(application: Application) : AndroidViewModel(application)
             fcr = fcr,
             weightGainKg = weightGainKg,
             feedPricePerKg = feedPricePerKg,
-            processingCost = processingCost
+            processingCost = processingCost,
+            onSaved = { closePurchaseDoScreen() }
         )
-        isPurchaseDoScreenOpen.value = false
     }
 
     fun closeForm() {
@@ -491,20 +491,21 @@ class AyamKasViewModel(application: Application) : AndroidViewModel(application)
         fcr: Double? = null,
         weightGainKg: Double? = null,
         feedPricePerKg: Double? = null,
-        processingCost: Double = 0.0
+        processingCost: Double = 0.0,
+        onSaved: (() -> Unit)? = null
     ) {
         val existingBeforeSave = id?.let { key -> allTransactions.value.firstOrNull { it.id == key } }
-        if (date.length != 10 || date[4] != '-' || date[7] != '-') {
-            viewModelScope.launch { _userMessage.emit("Tanggal transaksi harus berformat YYYY-MM-DD") }
+        if (!AyamKasFormatters.isValidIsoDate(date)) {
+            viewModelScope.launch { _userMessage.emit("Tanggal tidak valid. Gunakan tanggal nyata dengan format YYYY-MM-DD.") }
             return
         }
         if (amount <= 0.0) {
             viewModelScope.launch { _userMessage.emit("Nominal transaksi harus lebih dari nol") }
             return
         }
-        if (type in listOf("sale", "purchase", "expense") &&
+        if (isConfirmed && type in listOf("sale", "purchase", "expense") &&
             (paidAmount == null || paidAmount < 0.0 || paidAmount > amount)) {
-            viewModelScope.launch { _userMessage.emit("Pembayaran harus diisi di antara Rp0 dan nominal transaksi") }
+            viewModelScope.launch { _userMessage.emit("Untuk verifikasi, nominal kas aktual harus diisi antara Rp0 dan total transaksi. Gunakan Rp0 untuk transaksi kredit.") }
             return
         }
         if (type == "sale" && isConfirmed) {
@@ -560,10 +561,25 @@ class AyamKasViewModel(application: Application) : AndroidViewModel(application)
                 feedPricePerKg = feedPricePerKg,
                 processingCost = processingCost
             )
-            repository.saveTransaction(tx)
+            val result = runCatching { repository.saveTransaction(tx) }
+            if (result.isFailure) {
+                _userMessage.emit(
+                    "Penyimpanan gagal: ${result.exceptionOrNull()?.message ?: "kesalahan tidak diketahui"}. " +
+                        "Form tetap dibuka; periksa pesan sebelum mencoba lagi."
+                )
+                return@launch
+            }
             scheduleAutoSync()
             closeForm()
-            _userMessage.emit(if (existing != null) "Transaksi diperbarui" else "Transaksi disimpan")
+            _userMessage.emit(
+                when {
+                    existing != null && isConfirmed -> "Transaksi diperbarui dan terverifikasi"
+                    existing != null -> "Transaksi diperbarui sebagai draf"
+                    isConfirmed -> "Transaksi disimpan dan terverifikasi"
+                    else -> "Transaksi disimpan sebagai draf; bisa dilengkapi dan diverifikasi nanti"
+                }
+            )
+            onSaved?.invoke()
         }
     }
 
