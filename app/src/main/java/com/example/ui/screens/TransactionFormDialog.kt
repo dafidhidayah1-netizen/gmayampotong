@@ -50,6 +50,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.example.data.model.AyamTransaction
+import com.example.data.model.AyamKasFormatters
 import com.example.data.model.AyamTransactionType
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -525,6 +526,10 @@ fun TransactionFormDialog(
                     Spacer(modifier = Modifier.width(10.dp))
                     Button(
                         onClick = {
+                            if (!AyamKasFormatters.isValidIsoDate(date)) {
+                                errorMessage = "Tanggal tidak valid. Gunakan tanggal nyata dengan format YYYY-MM-DD."
+                                return@Button
+                            }
                             val amt = amountText.toDoubleOrNull()
                             if (amt == null || amt <= 0.0) {
                                 errorMessage = "Nominal transaksi harus lebih dari nol."
